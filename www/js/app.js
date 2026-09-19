@@ -18,6 +18,13 @@ function newDoc(name, lines = [], counter = null) {
     };
 }
 
+// Una tecla cambia de caja solo si es una letra. ',' y el espacio no, y si se
+// les aplicara, la etiqueta «Espacio» se sobrescribiria con un espacio en blanco.
+// Fuera del closure a proposito, para poder comprobarla.
+function isCaseLetter(v) {
+    return typeof v === 'string' && v.length === 1 && v.toLowerCase() !== v.toUpperCase();
+}
+
 // v1 guardaba un unico procedimiento suelto. Pura y fuera del closure a proposito:
 // es la ruta donde se pierde el trabajo del estudiante si falla, y asi se comprueba.
 function legacyToDocs(data) {
@@ -45,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabQwerty = document.getElementById('tab-qwerty');
     const tabGreek = document.getElementById('tab-greek');
     const greekGrid = document.getElementById('greek-grid');
+    const btnShift = document.getElementById('btn-shift');
     const btnRenderLine = document.getElementById('btn-render-line');
     const btnShare = document.getElementById('btn-share');
     const btnEvalIA = document.getElementById('btn-eval-ia');
@@ -579,9 +587,28 @@ document.addEventListener('DOMContentLoaded', () => {
         else el.addEventListener('click', run);
     }
 
+    // Mayusculas: reescribe data-insert y la etiqueta de las teclas de letra.
+    // Se salta ',' y el espacio, que no cambian de caja.
+    let shift = false;
+
+    function setShift(on) {
+        shift = on;
+        btnShift.classList.toggle('bg-blue-100', on);
+        btnShift.classList.toggle('text-blue-700', on);
+        qwertyGrid.querySelectorAll('.math-key[data-insert]').forEach(k => {
+            const v = k.dataset.insert;
+            if (!isCaseLetter(v)) return;
+            k.dataset.insert = on ? v.toUpperCase() : v.toLowerCase();
+            k.textContent = k.dataset.insert;
+        });
+    }
+
+    bindKey(btnShift, () => setShift(!shift));
+
     document.querySelectorAll('.math-key[data-insert]').forEach(btn => {
         bindKey(btn, () => {
             const { insert, text } = btn.dataset;
+            if (shift) setShift(false);   // un solo uso, como en cualquier teclado de movil
             if (activeLineId === null) {
                 createNewLine('math');
                 setTimeout(() => insertTextAtCursor(insert, text), 80);

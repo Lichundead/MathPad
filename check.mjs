@@ -45,7 +45,19 @@ assert.equal(ctx.legacyToDocs({ lines: [] }).length, 0, 'v1 vacio no crea docume
 assert.equal(ctx.legacyToDocs(null).length, 0, 'v1 ausente no crea documento');
 assert.equal(ctx.newDoc('x').counter, 1, 'documento nuevo empieza en 1');
 
-// 4. La clave v1 nunca se borra: es la red de seguridad de la migracion.
+// 4. Mayusculas: el predicado corre sobre las teclas reales del teclado qwerty.
+//    Si clasificara mal el espacio, setShift borraria la etiqueta «Espacio».
+const qwerty = html.split('Teclado QWERTY')[1].split('Teclado Griego')[0];
+const inserts = [...qwerty.matchAll(/data-insert="([^"]*)"/g)].map(m => m[1]);
+assert.ok(inserts.includes(' ') && inserts.includes(','), 'faltan espacio o coma en el qwerty');
+for (const v of inserts) {
+    const esperado = /^[a-zñáéíóúü]$/.test(v);
+    assert.equal(ctx.isCaseLetter(v), esperado, `isCaseLetter(${JSON.stringify(v)})`);
+}
+assert.equal(ctx.isCaseLetter(' '), false, 'el espacio no debe cambiar de caja');
+assert.ok(inserts.filter(ctx.isCaseLetter).length >= 32, 'deberia haber 32+ letras');
+
+// 5. La clave v1 nunca se borra: es la red de seguridad de la migracion.
 assert.ok(!/removeItem\(\s*LEGACY_KEY/.test(js), 'no borres LEGACY_KEY');
 
-console.log(`ok — ${keys.length} teclas, ${ids.size} ids, migracion v1→v2`);
+console.log(`ok — ${keys.length} teclas, ${ids.size} ids, migracion v1→v2, mayusculas`);
