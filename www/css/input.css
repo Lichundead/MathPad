@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        color-scheme: light; /* Fuerza a los navegadores a usar la paleta clara */
+    }
+
+    html,
+    body {
+        /* dvh = alto real del viewport; se ajusta cuando aparece el teclado del sistema */
+        height: 100dvh;
+        overscroll-behavior: none;
+    }
+
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background-color: #f3f4f6;
+        touch-action: pan-y;
+        -webkit-tap-highlight-color: transparent;
+    }
+}
+
+@layer components {
+    /* Respeta la barra de estado / notch en Android e iOS */
+    .app-header {
+        padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+    }
+
+    .toast-pos {
+        top: calc(4rem + env(safe-area-inset-top, 0px));
+    }
+
+    .line-container {
+        display: flex;
+        align-items: flex-start;
+        padding: 8px 0;
+        border-bottom: 1px solid #e5e7eb;
+        transition: background-color 0.2s;
+    }
+
+    .line-container.active {
+        background-color: #fefce8;
+        border-left: 3px solid #3b82f6;
+    }
+
+    .line-number {
+        width: 30px;
+        color: #9ca3af;
+        text-align: right;
+        padding-right: 12px;
+        font-size: 0.9rem;
+        user-select: none;
+        padding-top: 4px;
+    }
+
+    .line-content {
+        flex-grow: 1;
+        outline: none;
+        min-height: 24px;
+        font-size: 1.1rem;
+        padding-right: 12px;
+        word-break: break-word;
+    }
+
+    math-field {
+        font-size: 1.2rem;
+        width: 100%;
+    }
+
+    math-field::part(virtual-keyboard-toggle),
+    math-field::part(menu-toggle) {
+        display: none;
+    }
+
+    /* El teclado ya NO es position:fixed: es un hijo más del flex column,
+       así nunca queda tapado ni tapa el editor. */
+    .math-keyboard {
+        background-color: #ffffff;
+        border-top: 1px solid #d1d5db;
+        box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    .action-bar {
+        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    }
+
+    .keyboard-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 4px;
+        padding: 8px;
+        background-color: #f3f4f6;
+    }
+
+    .math-key {
+        background-color: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        padding: 10px 4px;
+        text-align: center;
+        font-size: 1rem;
+        cursor: pointer;
+        user-select: none;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        transition: all 0.1s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 48px;
+    }
+
+    .math-key:active {
+        background-color: #e5e7eb;
+        transform: scale(0.95);
+    }
+
+    .math-key.primary {
+        background-color: #eff6ff;
+        border-color: #bfdbfe;
+        color: #1d4ed8;
+        font-weight: bold;
+    }
+
+    .inline-input {
+        width: 100%;
+        font-size: 1.1rem;
+        padding: 8px;
+        border: 1px solid #93c5fd;
+        border-radius: 6px;
+        outline: none;
+        background-color: #eff6ff;
+        color: #1e3a8a;
+    }
+
+    /* Lienzo de captura: renderizado pero fuera de pantalla, para que html2canvas lo vea */
+    #capture-stage {
+        position: fixed;
+        top: 0;
+        left: -10000px;
+        width: 760px;
+        background: #ffffff;
+        padding: 24px;
+        z-index: -1;
+    }
+
+    .capture-line {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid #eef2f7;
+        font-size: 20px;
+    }
+
+    .capture-num {
+        color: #9ca3af;
+        min-width: 28px;
+        text-align: right;
+        font-size: 15px;
+    }
+}

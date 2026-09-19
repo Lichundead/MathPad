@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="color-scheme" content="light">
+    <title>MathPad - Editor de Fórmulas</title>
+
+    <!-- Todo local: la app funciona sin internet -->
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="vendor/fontawesome/all.min.css">
+    <link rel="stylesheet" href="vendor/katex/katex.min.css">
+
+    <script src="vendor/mathlive/mathlive.min.js"></script>
+    <script src="vendor/katex/katex.min.js"></script>
+    <script src="vendor/html2canvas.min.js"></script>
+</head>
+<body class="flex flex-col overflow-hidden text-gray-800">
+
+    <!-- App Header -->
+    <header class="bg-blue-600 text-white p-3 sm:p-4 shadow-md flex justify-between items-center z-10 shrink-0 gap-2 app-header">
+        <div class="flex items-center gap-2">
+            <i class="fa-solid fa-square-root-variable text-xl"></i>
+            <h1 class="text-xl font-bold tracking-wide hidden sm:block">MathPad</h1>
+        </div>
+
+        <!-- Campo para el código del estudiante -->
+        <div class="flex-1 max-w-[150px] sm:max-w-[200px]">
+            <input type="text" id="student-code" placeholder="Cód. Estudiante"
+                   class="w-full px-2 py-1.5 text-sm text-gray-800 rounded outline-none border-none focus:ring-2 focus:ring-purple-300 transition-shadow"
+                   autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+        </div>
+
+        <div class="flex gap-2">
+            <!-- Copiar el procedimiento como texto para la IA -->
+            <button id="btn-eval-ia" class="bg-purple-600 active:bg-purple-700 px-3 py-1 rounded text-sm font-medium transition shadow flex items-center gap-1" title="Copiar para IA">
+                <i class="fa-solid fa-robot"></i> <span class="hidden sm:inline">Evaluar</span>
+            </button>
+            <button id="btn-share" class="bg-green-500 active:bg-green-600 px-3 py-1 rounded text-sm font-medium transition shadow flex items-center gap-1" title="Compartir Imagen">
+                <i class="fa-solid fa-share-nodes"></i> <span class="hidden sm:inline">Compartir</span>
+            </button>
+            <div class="w-px h-6 bg-blue-400 mx-1 self-center"></div>
+            <button id="btn-clear" class="p-2 rounded active:bg-blue-700 transition text-red-200" title="Limpiar todo">
+                <i class="fa-solid fa-trash-can"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Editor Area -->
+    <main class="flex-1 min-h-0 overflow-y-auto bg-white p-2 pb-8" id="editor-area"></main>
+
+    <!-- Math Keyboard / Toolbar -->
+    <div class="math-keyboard shrink-0" id="math-keyboard">
+        <div class="flex border-b border-gray-200 bg-white px-2">
+            <button id="tab-basic" class="px-4 py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600 focus:outline-none">Básico</button>
+            <button id="tab-qwerty" class="px-4 py-2 text-sm font-medium text-gray-500 focus:outline-none">Teclado</button>
+            <button class="px-4 py-2 text-sm font-medium text-gray-500 focus:outline-none ml-auto" id="btn-toggle-keyboard">
+                <i class="fa-solid fa-chevron-down"></i>
+            </button>
+        </div>
+
+        <div id="keyboard-container">
+            <!-- Teclado Básico -->
+            <div class="keyboard-grid" id="keyboard-grid">
+                <div class="math-key" data-insert="7">7</div>
+                <div class="math-key" data-insert="8">8</div>
+                <div class="math-key" data-insert="9">9</div>
+                <div class="math-key primary" data-insert="+">+</div>
+                <div class="math-key primary" data-insert="-">-</div>
+
+                <div class="math-key" data-insert="4">4</div>
+                <div class="math-key" data-insert="5">5</div>
+                <div class="math-key" data-insert="6">6</div>
+                <div class="math-key primary" data-insert="\cdot">×</div>
+                <div class="math-key primary" data-insert="\div">÷</div>
+
+                <div class="math-key" data-insert="1">1</div>
+                <div class="math-key" data-insert="2">2</div>
+                <div class="math-key" data-insert="3">3</div>
+                <div class="math-key text-blue-600 font-bold italic" data-insert="x">x</div>
+                <div class="math-key text-blue-600 font-bold italic" data-insert="y">y</div>
+
+                <div class="math-key" data-insert="(">(</div>
+                <div class="math-key" data-insert="0">0</div>
+                <div class="math-key" data-insert=")">)</div>
+                <div class="math-key font-bold" data-insert=".">.</div>
+                <div class="math-key primary" data-insert="=">=</div>
+
+                <div class="math-key primary col-span-3 flex flex-col items-center justify-center gap-[2px]" data-insert="\frac{#?}{#?}" title="Fracción">
+                    <div class="w-4 h-3 border-2 border-current rounded-sm"></div>
+                    <div class="w-6 h-[2px] bg-current rounded-full"></div>
+                    <div class="w-4 h-3 border-2 border-current rounded-sm"></div>
+                </div>
+                <div class="math-key primary text-xl font-serif flex items-center justify-center" data-insert="\begin{cases} #? \\ #? \end{cases}" title="Sistema 2x2">{</div>
+                <div class="math-key text-red-500 font-bold bg-red-50 border-red-200 btn-backspace">
+                    <i class="fa-solid fa-delete-left"></i>
+                </div>
+            </div>
+
+            <!-- Teclado QWERTY -->
+            <div class="flex-col gap-2 p-2 bg-gray-100" id="qwerty-grid" style="display: none;">
+                <div class="flex justify-between gap-1 w-full">
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="q">q</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="w">w</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="e">e</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="r">r</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="t">t</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="y">y</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="u">u</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="i">i</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="o">o</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="p">p</div>
+                </div>
+                <div class="flex justify-center gap-1 w-[95%] mx-auto">
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="a">a</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="s">s</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="d">d</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="f">f</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="g">g</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="h">h</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="j">j</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="k">k</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="l">l</div>
+                </div>
+                <div class="flex justify-center gap-1 w-full">
+                    <div class="w-[5%]"></div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="z">z</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="x">x</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="c">c</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="v">v</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="b">b</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="n">n</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="m">m</div>
+                    <div class="math-key flex-[1.5] text-red-500 font-bold bg-red-50 border-red-200 btn-backspace px-0">
+                        <i class="fa-solid fa-delete-left"></i>
+                    </div>
+                </div>
+                <div class="flex justify-center gap-1 w-full mt-1">
+                    <div class="math-key flex-1 px-0 font-bold" data-insert=",">,</div>
+                    <div class="math-key flex-[4] px-0 text-sm font-medium" data-insert=" ">Espacio</div>
+                    <div class="math-key flex-1 px-0 font-bold" data-insert="=">=</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Barra de acción -->
+        <div class="p-2 bg-gray-100 flex gap-2 border-t border-gray-200 action-bar">
+            <button id="btn-render-line" class="bg-green-500 active:bg-green-600 text-white py-2 px-4 rounded shadow flex items-center justify-center gap-2" title="Dejar de editar">
+                <i class="fa-solid fa-check"></i>
+            </button>
+            <button id="btn-new-line" class="flex-1 bg-blue-600 active:bg-blue-700 text-white py-2 rounded shadow flex justify-center items-center gap-2">
+                <i class="fa-solid fa-plus"></i> Fórmulas
+            </button>
+            <button id="btn-new-text" class="flex-1 bg-gray-600 active:bg-gray-700 text-white py-2 rounded shadow flex justify-center items-center gap-2">
+                <i class="fa-solid fa-font"></i> Texto
+            </button>
+        </div>
+    </div>
+
+    <!-- Contenedor oculto usado solo para generar la imagen (KaTeX, sin Shadow DOM) -->
+    <div id="capture-stage" aria-hidden="true"></div>
+
+    <div id="toast" class="fixed left-1/2 -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded shadow-lg transition-opacity duration-300 opacity-0 pointer-events-none z-50 toast-pos">
+        Mensaje
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

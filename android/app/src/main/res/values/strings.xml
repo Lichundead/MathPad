@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">MathPad</string>
+    <string name="title_activity_main">MathPad</string>
+    <string name="package_name">com.sebas.mathpad</string>
+    <string name="custom_url_scheme">com.sebas.mathpad</string>
+</resources>

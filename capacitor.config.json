@@ -1,0 +1,8 @@
+{
+  "appId": "com.sebas.mathpad",
+  "appName": "MathPad",
+  "webDir": "www",
+  "android": {
+    "webContentsDebuggingEnabled": true
+  }
+}
