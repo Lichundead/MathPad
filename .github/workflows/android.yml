@@ -14,14 +14,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "24"
+          cache: "npm"
 
       # Capacitor 8 necesita JDK 21
       - uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
+          distribution: "temurin"
+          java-version: "21"
+          cache: "gradle"
 
       - name: Instalar dependencias
         run: npm ci

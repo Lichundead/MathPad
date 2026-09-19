@@ -23,13 +23,18 @@
 }
 
 @layer components {
-    /* Respeta la barra de estado / notch en Android e iOS */
+    /* Respeta la barra de estado / notch en Android e iOS.
+       El WebView de Android < 140 devuelve 0 en env(safe-area-inset-*) bajo
+       edge-to-edge; Capacitor 8.3+ inyecta --safe-area-inset-* como sustituto.
+       El padding vive solo aqui: las utilidades de Tailwind lo pisaban porque
+       la capa utilities gana sobre components. */
     .app-header {
-        padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+        padding: 0.75rem;
+        padding-top: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 0.75rem);
     }
 
     .toast-pos {
-        top: calc(4rem + env(safe-area-inset-top, 0px));
+        top: calc(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) + 4rem);
     }
 
     .line-container {
@@ -83,7 +88,8 @@
     }
 
     .action-bar {
-        padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+        padding: 0.5rem;
+        padding-bottom: calc(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 0.5rem);
     }
 
     .keyboard-grid {

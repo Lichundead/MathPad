@@ -1,21 +1,39 @@
 /* MathPad — lógica principal (sin dependencias de red) */
 
-const STORAGE_KEY = 'mathpad:lines:v1';
+const STORAGE_KEY = 'mathpad:docs:v2';
+const LEGACY_KEY = 'mathpad:lines:v1';   // se conserva: red de seguridad si v2 se corrompe
 
 // --- Configuración de MathLive para funcionar 100% offline ---
 if (window.MathfieldElement) {
     MathfieldElement.fontsDirectory = 'vendor/mathlive/fonts';
     MathfieldElement.soundsDirectory = null;      // no empaquetamos sonidos
-    MathfieldElement.mathVirtualKeyboardPolicy = 'manual'; // usamos NUESTRO teclado
+}
+
+function newDoc(name, lines = [], counter = null) {
+    return {
+        id: Date.now() + Math.random(),
+        name,
+        lines,
+        counter: counter || (lines.length + 1)
+    };
+}
+
+// v1 guardaba un unico procedimiento suelto. Pura y fuera del closure a proposito:
+// es la ruta donde se pierde el trabajo del estudiante si falla, y asi se comprueba.
+function legacyToDocs(data) {
+    if (!data || !Array.isArray(data.lines) || data.lines.length === 0) return [];
+    return [newDoc('Procedimiento 1', data.lines, data.counter)];
 }
 
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- Estado ---
-    let linesData = [];
+    let linesData = [];          // copia de trabajo del documento activo
     let activeLineId = null;
     let lineCounter = 1;
     let activeInputForKeyboard = null;
+    let docs = [];               // [{ id, name, lines, counter }]
+    let activeDocId = null;
 
     // --- DOM ---
     const editorArea = document.getElementById('editor-area');
@@ -25,18 +43,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const qwertyGrid = document.getElementById('qwerty-grid');
     const tabBasic = document.getElementById('tab-basic');
     const tabQwerty = document.getElementById('tab-qwerty');
+    const tabGreek = document.getElementById('tab-greek');
+    const greekGrid = document.getElementById('greek-grid');
     const btnRenderLine = document.getElementById('btn-render-line');
     const btnShare = document.getElementById('btn-share');
     const btnEvalIA = document.getElementById('btn-eval-ia');
     const studentCodeInput = document.getElementById('student-code');
     const captureStage = document.getElementById('capture-stage');
+    const docSelect = document.getElementById('doc-select');
+    const btnPdf = document.getElementById('btn-pdf');
 
     // --- Persistencia ---
+    function currentDoc() {
+        return docs.find(d => d.id === activeDocId);
+    }
+
     function save() {
+        const doc = currentDoc();
+        if (doc) {
+            doc.lines = linesData;
+            doc.counter = lineCounter;
+        }
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify({
-                lines: linesData,
-                counter: lineCounter,
+                docs,
+                activeDocId,
                 studentCode: studentCodeInput.value
             }));
         } catch (e) {
@@ -44,21 +75,86 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // No borra LEGACY_KEY: si algo sale mal, el trabajo sigue ahi.
+    function migrateLegacy() {
+        try {
+            const raw = localStorage.getItem(LEGACY_KEY);
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            if (data && data.studentCode) studentCodeInput.value = data.studentCode;
+            docs = legacyToDocs(data);
+        } catch (e) {
+            console.warn('No se pudo migrar v1:', e);
+        }
+    }
+
     function load() {
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
-            if (!raw) return false;
-            const data = JSON.parse(raw);
-            if (!data) return false;
-            if (data.studentCode) studentCodeInput.value = data.studentCode;
-            if (!Array.isArray(data.lines) || data.lines.length === 0) return false;
-            linesData = data.lines;
-            lineCounter = data.counter || (linesData.length + 1);
-            return true;
+            if (raw) {
+                const data = JSON.parse(raw) || {};
+                if (Array.isArray(data.docs)) docs = data.docs;
+                activeDocId = data.activeDocId;
+                if (data.studentCode) studentCodeInput.value = data.studentCode;
+            } else {
+                migrateLegacy();
+            }
         } catch (e) {
-            return false;
+            console.warn('No se pudo cargar:', e);
         }
+
+        if (docs.length === 0) docs = [newDoc('Procedimiento 1')];
+        if (!currentDoc()) activeDocId = docs[0].id;
+
+        const doc = currentDoc();
+        linesData = doc.lines;
+        lineCounter = doc.counter;
+        renderDocSelect();
+        return linesData.length > 0;
     }
+
+    function renderDocSelect() {
+        docSelect.innerHTML = '';
+        docs.forEach(d => docSelect.add(new Option(d.name, d.id, false, d.id === activeDocId)));
+        docSelect.add(new Option('➕ Nuevo…', 'new'));
+    }
+
+    function loadDoc(id) {
+        activeDocId = id;
+        const doc = currentDoc();
+        linesData = doc.lines;
+        lineCounter = doc.counter;
+        activeLineId = null;
+        renderDocSelect();
+        renderEditor();
+    }
+
+    function switchDoc(id) {
+        save();                      // vuelca el actual antes de soltarlo
+        loadDoc(id);
+        save();
+    }
+
+    docSelect.addEventListener('change', () => {
+        if (docSelect.value !== 'new') {
+            switchDoc(docs.find(d => String(d.id) === docSelect.value).id);
+            return;
+        }
+        const name = (prompt('Nombre del procedimiento:') || '').trim();
+        if (!name) {
+            renderDocSelect();       // deshace la seleccion de «Nuevo…»
+            return;
+        }
+        save();
+        const doc = newDoc(name);
+        docs.push(doc);
+        activeDocId = doc.id;
+        linesData = doc.lines;
+        lineCounter = 1;
+        activeLineId = null;
+        renderDocSelect();
+        createNewLine();
+    });
 
     // --- Edición ---
     function createNewLine(type = 'math') {
@@ -192,12 +288,23 @@ document.addEventListener('DOMContentLoaded', () => {
         editorArea.scrollTop = editorArea.scrollHeight;
     }
 
+    // Salir del modo edicion. Devuelve si habia algo que cerrar (lo usa el boton atras).
+    function deactivate() {
+        if (activeLineId === null) return false;
+        activeLineId = null;
+        renderEditor();
+        return true;
+    }
+
+    function hasContent() {
+        return linesData.some(l => l.rawText && l.rawText.trim() !== '');
+    }
+
     // --- Evaluar: copiar el procedimiento como texto plano para una IA ---
 
     function buildPromptText() {
         const studentCode = studentCodeInput.value.trim();
         let promptText = '';
-        let hasContent = false;
 
         if (studentCode !== '') {
             promptText += `Estudiante: ${studentCode}\n\n`;
@@ -205,7 +312,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         linesData.forEach((line, index) => {
             if (line.rawText && line.rawText.trim() !== '') {
-                hasContent = true;
                 if (line.type === 'text') {
                     promptText += `[Línea ${index}] (Texto): ${line.rawText}\n`;
                 } else {
@@ -214,7 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        return { promptText, hasContent };
+        return promptText;
     }
 
     async function copyToClipboard(text) {
@@ -250,18 +356,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     btnEvalIA.addEventListener('click', async () => {
-        if (activeLineId !== null) {
-            activeLineId = null;
-            renderEditor();
-        }
+        deactivate();
 
-        const { promptText, hasContent } = buildPromptText();
-        if (!hasContent) {
+        if (!hasContent()) {
             showToast('No hay contenido para evaluar');
             return;
         }
 
-        const ok = await copyToClipboard(promptText);
+        const ok = await copyToClipboard(buildPromptText());
         showToast(ok ? '¡Procedimiento copiado para la IA!' : 'No se pudo copiar el texto');
     });
 
@@ -304,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function shareBlob(blob) {
+    async function shareBlob(blob, ext) {
         const cap = window.Capacitor;
         const isNative = !!(cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform());
 
@@ -317,7 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const { Filesystem, Share } = cap.Plugins;
-            const fileName = `mathpad_${Date.now()}.png`;
+            const fileName = `mathpad_${Date.now()}.${ext}`;
             const written = await Filesystem.writeFile({
                 path: fileName,
                 data: base64,
@@ -331,7 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Ruta web (navegador de escritorio o móvil)
-        const file = new File([blob], 'mathpad_procedimiento.png', { type: 'image/png' });
+        const file = new File([blob], `mathpad_procedimiento.${ext}`, { type: blob.type });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
             await navigator.share({ title: 'Mi Procedimiento Matemático', files: [file] });
             return;
@@ -339,36 +441,35 @@ document.addEventListener('DOMContentLoaded', () => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'mathpad_procedimiento.png';
+        a.download = `mathpad_procedimiento.${ext}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        showToast('Imagen descargada');
+        showToast(ext === 'pdf' ? 'PDF descargado' : 'Imagen descargada');
+    }
+
+    async function renderCanvas() {
+        buildCaptureStage();
+        await new Promise(r => setTimeout(r, 250)); // deja que KaTeX pinte
+        return html2canvas(captureStage, {
+            backgroundColor: '#ffffff',
+            scale: 2,
+            logging: false
+        });
     }
 
     btnShare.addEventListener('click', async () => {
-        if (activeLineId !== null) {
-            activeLineId = null;
-            renderEditor();
-        }
+        deactivate();
 
-        const hasContent = linesData.some(l => l.rawText && l.rawText.trim() !== '');
-        if (!hasContent) {
+        if (!hasContent()) {
             showToast('No hay contenido para compartir');
             return;
         }
 
         showToast('Generando imagen...');
         try {
-            buildCaptureStage();
-            await new Promise(r => setTimeout(r, 250)); // deja que KaTeX pinte
-
-            const canvas = await html2canvas(captureStage, {
-                backgroundColor: '#ffffff',
-                scale: 2,
-                logging: false
-            });
+            const canvas = await renderCanvas();
 
             canvas.toBlob(async (blob) => {
                 if (!blob) {
@@ -376,7 +477,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 try {
-                    await shareBlob(blob);
+                    await shareBlob(blob, 'png');
                 } catch (err) {
                     console.log('Compartir cancelado o falló:', err);
                 }
@@ -388,16 +489,48 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    btnPdf.addEventListener('click', async () => {
+        deactivate();
+
+        if (!hasContent()) {
+            showToast('No hay contenido para exportar');
+            return;
+        }
+
+        showToast('Generando PDF...');
+        try {
+            const canvas = await renderCanvas();
+            const pdf = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' });
+            const margin = 24;
+            const width = pdf.internal.pageSize.getWidth() - margin * 2;
+            const height = canvas.height * width / canvas.width;
+            const usable = pdf.internal.pageSize.getHeight() - margin * 2;
+            const img = canvas.toDataURL('image/png');
+
+            // Paginado: la misma imagen alta, desplazada hacia arriba en cada pagina.
+            // ponytail: puede partir una linea por la mitad; si molesta, paginar por
+            // filas en buildCaptureStage en vez de por pixeles.
+            pdf.addImage(img, 'PNG', margin, margin, width, height);
+            for (let offset = usable; offset < height; offset += usable) {
+                pdf.addPage();
+                pdf.addImage(img, 'PNG', margin, margin - offset, width, height);
+            }
+
+            await shareBlob(pdf.output('blob'), 'pdf');
+        } catch (error) {
+            console.error('Error al generar PDF:', error);
+            showToast('Error al generar el PDF');
+        }
+    });
+
     // --- Teclado matemático ---
-    function insertTextAtCursor(textToInsert) {
+    // plainText = data-text de la tecla: su forma legible para las lineas de
+    // texto, que no son LaTeX. Solo lo llevan las teclas donde ambas difieren.
+    function insertTextAtCursor(textToInsert, plainText) {
         if (!activeInputForKeyboard) return;
 
         if (activeInputForKeyboard.tagName && activeInputForKeyboard.tagName.toLowerCase() === 'input') {
-            let txt = textToInsert;
-            if (txt === '\\cdot') txt = '×';
-            if (txt === '\\div') txt = '÷';
-            if (txt.includes('\\frac')) txt = '/';
-            if (txt.includes('\\begin{cases}')) txt = '{';
+            const txt = plainText || textToInsert;
 
             const start = activeInputForKeyboard.selectionStart;
             const text = activeInputForKeyboard.value;
@@ -413,57 +546,78 @@ document.addEventListener('DOMContentLoaded', () => {
         activeInputForKeyboard.dispatchEvent(new Event('input'));
     }
 
-    document.querySelectorAll('.math-key[data-insert]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+    function deleteBackward() {
+        if (!activeInputForKeyboard) return;
+
+        if (activeInputForKeyboard.tagName && activeInputForKeyboard.tagName.toLowerCase() === 'input') {
+            const start = activeInputForKeyboard.selectionStart;
+            if (start > 0) {
+                const text = activeInputForKeyboard.value;
+                activeInputForKeyboard.value = text.substring(0, start - 1) + text.substring(activeInputForKeyboard.selectionEnd);
+                activeInputForKeyboard.selectionStart = activeInputForKeyboard.selectionEnd = start - 1;
+                activeInputForKeyboard.dispatchEvent(new Event('input'));
+            }
+            activeInputForKeyboard.focus();
+            return;
+        }
+
+        activeInputForKeyboard.executeCommand('deleteBackward');
+        activeInputForKeyboard.dispatchEvent(new Event('input'));
+        activeInputForKeyboard.focus();
+    }
+
+    // Un solo listener por tecla. preventDefault() en pointerdown conserva el foco
+    // del campo activo (cancela el mousedown de compatibilidad, que es quien lo
+    // movería) y de paso evita el click sintético: con touchstart+preventDefault
+    // Android cancelaba ese click y el handler no llegaba a ejecutarse nunca.
+    function bindKey(el, handler) {
+        const run = (e) => {
             e.preventDefault();
+            handler();
+        };
+        if (window.PointerEvent) el.addEventListener('pointerdown', run);
+        else el.addEventListener('click', run);
+    }
+
+    document.querySelectorAll('.math-key[data-insert]').forEach(btn => {
+        bindKey(btn, () => {
+            const { insert, text } = btn.dataset;
             if (activeLineId === null) {
                 createNewLine('math');
-                setTimeout(() => insertTextAtCursor(btn.dataset.insert), 80);
+                setTimeout(() => insertTextAtCursor(insert, text), 80);
                 return;
             }
-            insertTextAtCursor(btn.dataset.insert);
+            insertTextAtCursor(insert, text);
         });
-        btn.addEventListener('mousedown', e => e.preventDefault());
-        btn.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
     });
 
-    document.querySelectorAll('.btn-backspace').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (!activeInputForKeyboard) return;
-
-            if (activeInputForKeyboard.tagName && activeInputForKeyboard.tagName.toLowerCase() === 'input') {
-                const start = activeInputForKeyboard.selectionStart;
-                if (start > 0) {
-                    const text = activeInputForKeyboard.value;
-                    activeInputForKeyboard.value = text.substring(0, start - 1) + text.substring(activeInputForKeyboard.selectionEnd);
-                    activeInputForKeyboard.selectionStart = activeInputForKeyboard.selectionEnd = start - 1;
-                    activeInputForKeyboard.dispatchEvent(new Event('input'));
-                }
-                activeInputForKeyboard.focus();
-                return;
-            }
-
-            activeInputForKeyboard.executeCommand('deleteBackward');
-            activeInputForKeyboard.dispatchEvent(new Event('input'));
-            activeInputForKeyboard.focus();
-        });
-        btn.addEventListener('mousedown', e => e.preventDefault());
-        btn.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
-    });
+    document.querySelectorAll('.btn-backspace').forEach(btn => bindKey(btn, deleteBackward));
 
     // --- UI general ---
     btnNewLine.addEventListener('click', () => createNewLine('math'));
     document.getElementById('btn-new-text').addEventListener('click', () => createNewLine('text'));
 
-    btnRenderLine.addEventListener('click', () => {
-        if (activeLineId !== null) {
-            activeLineId = null;
-            renderEditor();
-        }
-    });
+    btnRenderLine.addEventListener('click', deactivate);
+
+    // Boton atras de Android: sale del modo edicion; solo cierra si no habia nada abierto.
+    // Con un listener registrado, Capacitor deja de cerrar la app por su cuenta.
+    const capApp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+    if (capApp) {
+        capApp.addListener('backButton', () => {
+            if (!deactivate()) capApp.exitApp();
+        });
+    }
 
     btnClear.addEventListener('click', () => {
+        if (docs.length > 1) {
+            if (!confirm(`¿Borrar el procedimiento «${currentDoc().name}»?`)) return;
+            docs = docs.filter(d => d.id !== activeDocId);
+            loadDoc(docs[0].id);
+            save();
+            showToast('Procedimiento borrado');
+            return;
+        }
+
         if (confirm('¿Estás seguro de borrar todo el procedimiento?')) {
             linesData = [];
             lineCounter = 1;
@@ -485,26 +639,25 @@ document.addEventListener('DOMContentLoaded', () => {
         keyboardVisible = !keyboardVisible;
     });
 
-    function activateTab(tabName) {
-        if (tabName === 'basic') {
-            tabBasic.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
-            tabBasic.classList.remove('text-gray-500');
-            tabQwerty.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
-            tabQwerty.classList.add('text-gray-500');
-            keyboardGrid.style.display = 'grid';
-            qwertyGrid.style.display = 'none';
-        } else {
-            tabQwerty.classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
-            tabQwerty.classList.remove('text-gray-500');
-            tabBasic.classList.remove('text-blue-600', 'border-b-2', 'border-blue-600');
-            tabBasic.classList.add('text-gray-500');
-            qwertyGrid.style.display = 'flex';
-            keyboardGrid.style.display = 'none';
-        }
+    // [pestana, panel, display]. Una pestana nueva es una fila mas.
+    const TABS = [
+        [tabBasic, keyboardGrid, 'grid'],
+        [tabQwerty, qwertyGrid, 'flex'],
+        [tabGreek, greekGrid, 'grid']
+    ];
+
+    function activateTab(activeTab) {
+        TABS.forEach(([tab, panel, display]) => {
+            const on = tab === activeTab;
+            tab.classList.toggle('text-blue-600', on);
+            tab.classList.toggle('border-b-2', on);
+            tab.classList.toggle('border-blue-600', on);
+            tab.classList.toggle('text-gray-500', !on);
+            panel.style.display = on ? display : 'none';
+        });
     }
 
-    tabBasic.addEventListener('click', () => activateTab('basic'));
-    tabQwerty.addEventListener('click', () => activateTab('qwerty'));
+    TABS.forEach(([tab]) => tab.addEventListener('click', () => activateTab(tab)));
 
     let toastTimer = null;
     function showToast(msg) {
@@ -517,9 +670,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Inicio ---
     customElements.whenDefined('math-field').then(() => {
-        if (window.mathVirtualKeyboard) {
-            window.mathVirtualKeyboard.mathVirtualKeyboardPolicy = 'manual';
-        }
         if (load()) {
             activeLineId = null;
             renderEditor();

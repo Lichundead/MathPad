@@ -8,24 +8,27 @@
 
     <!-- Todo local: la app funciona sin internet -->
     <link rel="stylesheet" href="css/styles.css">
-    <link rel="stylesheet" href="vendor/fontawesome/all.min.css">
+    <link rel="stylesheet" href="vendor/fontawesome/css/all.min.css">
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
 
     <script src="vendor/mathlive/mathlive.min.js"></script>
     <script src="vendor/katex/katex.min.js"></script>
     <script src="vendor/html2canvas.min.js"></script>
+    <script src="vendor/jspdf.umd.min.js"></script>
 </head>
 <body class="flex flex-col overflow-hidden text-gray-800">
 
     <!-- App Header -->
-    <header class="bg-blue-600 text-white p-3 sm:p-4 shadow-md flex justify-between items-center z-10 shrink-0 gap-2 app-header">
-        <div class="flex items-center gap-2">
-            <i class="fa-solid fa-square-root-variable text-xl"></i>
-            <h1 class="text-xl font-bold tracking-wide hidden sm:block">MathPad</h1>
+    <header class="bg-blue-600 text-white shadow-md flex justify-between items-center z-10 shrink-0 gap-2 app-header">
+        <div class="flex items-center gap-2 min-w-0">
+            <i class="fa-solid fa-square-root-variable text-xl shrink-0"></i>
+            <!-- Procedimientos guardados: un <select> nativo hace de lista, sin modal -->
+            <select id="doc-select" title="Procedimiento"
+                    class="min-w-0 max-w-[120px] sm:max-w-[180px] bg-blue-700 text-white text-sm rounded px-1 py-1.5 outline-none border-none"></select>
         </div>
 
         <!-- Campo para el código del estudiante -->
-        <div class="flex-1 max-w-[150px] sm:max-w-[200px]">
+        <div class="flex-1 min-w-0 max-w-[110px] sm:max-w-[200px]">
             <input type="text" id="student-code" placeholder="Cód. Estudiante"
                    class="w-full px-2 py-1.5 text-sm text-gray-800 rounded outline-none border-none focus:ring-2 focus:ring-purple-300 transition-shadow"
                    autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
@@ -39,7 +42,6 @@
             <button id="btn-share" class="bg-green-500 active:bg-green-600 px-3 py-1 rounded text-sm font-medium transition shadow flex items-center gap-1" title="Compartir Imagen">
                 <i class="fa-solid fa-share-nodes"></i> <span class="hidden sm:inline">Compartir</span>
             </button>
-            <div class="w-px h-6 bg-blue-400 mx-1 self-center"></div>
             <button id="btn-clear" class="p-2 rounded active:bg-blue-700 transition text-red-200" title="Limpiar todo">
                 <i class="fa-solid fa-trash-can"></i>
             </button>
@@ -52,9 +54,10 @@
     <!-- Math Keyboard / Toolbar -->
     <div class="math-keyboard shrink-0" id="math-keyboard">
         <div class="flex border-b border-gray-200 bg-white px-2">
-            <button id="tab-basic" class="px-4 py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600 focus:outline-none">Básico</button>
-            <button id="tab-qwerty" class="px-4 py-2 text-sm font-medium text-gray-500 focus:outline-none">Teclado</button>
-            <button class="px-4 py-2 text-sm font-medium text-gray-500 focus:outline-none ml-auto" id="btn-toggle-keyboard">
+            <button id="tab-basic" class="px-3 py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600 focus:outline-none">Básico</button>
+            <button id="tab-qwerty" class="px-3 py-2 text-sm font-medium text-gray-500 focus:outline-none">Teclado</button>
+            <button id="tab-greek" class="px-3 py-2 text-sm font-medium text-gray-500 focus:outline-none">αβγ</button>
+            <button class="px-3 py-2 text-sm font-medium text-gray-500 focus:outline-none ml-auto" id="btn-toggle-keyboard">
                 <i class="fa-solid fa-chevron-down"></i>
             </button>
         </div>
@@ -71,8 +74,8 @@
                 <div class="math-key" data-insert="4">4</div>
                 <div class="math-key" data-insert="5">5</div>
                 <div class="math-key" data-insert="6">6</div>
-                <div class="math-key primary" data-insert="\cdot">×</div>
-                <div class="math-key primary" data-insert="\div">÷</div>
+                <div class="math-key primary" data-insert="\cdot" data-text="×">×</div>
+                <div class="math-key primary" data-insert="\div" data-text="÷">÷</div>
 
                 <div class="math-key" data-insert="1">1</div>
                 <div class="math-key" data-insert="2">2</div>
@@ -86,12 +89,18 @@
                 <div class="math-key font-bold" data-insert=".">.</div>
                 <div class="math-key primary" data-insert="=">=</div>
 
-                <div class="math-key primary col-span-3 flex flex-col items-center justify-center gap-[2px]" data-insert="\frac{#?}{#?}" title="Fracción">
+                <div class="math-key primary" data-insert="\sqrt{#?}" data-text="√" title="Raíz cuadrada">√</div>
+                <div class="math-key primary" data-insert="\sqrt[#?]{#?}" data-text="√" title="Raíz n-ésima"><span class="text-xs align-super">n</span>√</div>
+                <div class="math-key primary" data-insert="^{#?}" data-text="^" title="Potencia">x<sup>n</sup></div>
+                <div class="math-key primary" data-insert="_{#?}" data-text="_" title="Subíndice">x<sub>n</sub></div>
+                <div class="math-key primary" data-insert="\pi" data-text="π" title="Pi">π</div>
+
+                <div class="math-key primary col-span-3 flex flex-col items-center justify-center gap-[2px]" data-insert="\frac{#?}{#?}" data-text="/" title="Fracción">
                     <div class="w-4 h-3 border-2 border-current rounded-sm"></div>
                     <div class="w-6 h-[2px] bg-current rounded-full"></div>
                     <div class="w-4 h-3 border-2 border-current rounded-sm"></div>
                 </div>
-                <div class="math-key primary text-xl font-serif flex items-center justify-center" data-insert="\begin{cases} #? \\ #? \end{cases}" title="Sistema 2x2">{</div>
+                <div class="math-key primary text-xl font-serif flex items-center justify-center" data-insert="\begin{cases} #? \\ #? \end{cases}" data-text="{" title="Sistema 2x2">{</div>
                 <div class="math-key text-red-500 font-bold bg-red-50 border-red-200 btn-backspace">
                     <i class="fa-solid fa-delete-left"></i>
                 </div>
@@ -141,12 +150,46 @@
                     <div class="math-key flex-1 px-0 font-bold" data-insert="=">=</div>
                 </div>
             </div>
+
+            <!-- Teclado Griego -->
+            <div class="keyboard-grid" id="greek-grid" style="display: none;">
+                <div class="math-key" data-insert="\alpha" data-text="α">α</div>
+                <div class="math-key" data-insert="\beta" data-text="β">β</div>
+                <div class="math-key" data-insert="\gamma" data-text="γ">γ</div>
+                <div class="math-key" data-insert="\delta" data-text="δ">δ</div>
+                <div class="math-key" data-insert="\epsilon" data-text="ε">ε</div>
+                <div class="math-key" data-insert="\theta" data-text="θ">θ</div>
+                <div class="math-key" data-insert="\lambda" data-text="λ">λ</div>
+                <div class="math-key" data-insert="\mu" data-text="μ">μ</div>
+                <div class="math-key" data-insert="\pi" data-text="π">π</div>
+                <div class="math-key" data-insert="\rho" data-text="ρ">ρ</div>
+                <div class="math-key" data-insert="\sigma" data-text="σ">σ</div>
+                <div class="math-key" data-insert="\tau" data-text="τ">τ</div>
+                <div class="math-key" data-insert="\phi" data-text="φ">φ</div>
+                <div class="math-key" data-insert="\chi" data-text="χ">χ</div>
+                <div class="math-key" data-insert="\psi" data-text="ψ">ψ</div>
+                <div class="math-key" data-insert="\omega" data-text="ω">ω</div>
+                <div class="math-key primary" data-insert="\Gamma" data-text="Γ">Γ</div>
+                <div class="math-key primary" data-insert="\Delta" data-text="Δ">Δ</div>
+                <div class="math-key primary" data-insert="\Theta" data-text="Θ">Θ</div>
+                <div class="math-key primary" data-insert="\Lambda" data-text="Λ">Λ</div>
+                <div class="math-key primary" data-insert="\Xi" data-text="Ξ">Ξ</div>
+                <div class="math-key primary" data-insert="\Pi" data-text="Π">Π</div>
+                <div class="math-key primary" data-insert="\Sigma" data-text="Σ">Σ</div>
+                <div class="math-key primary" data-insert="\Omega" data-text="Ω">Ω</div>
+                <div class="math-key text-red-500 font-bold bg-red-50 border-red-200 btn-backspace">
+                    <i class="fa-solid fa-delete-left"></i>
+                </div>
+            </div>
         </div>
 
         <!-- Barra de acción -->
-        <div class="p-2 bg-gray-100 flex gap-2 border-t border-gray-200 action-bar">
+        <div class="bg-gray-100 flex gap-2 border-t border-gray-200 action-bar">
             <button id="btn-render-line" class="bg-green-500 active:bg-green-600 text-white py-2 px-4 rounded shadow flex items-center justify-center gap-2" title="Dejar de editar">
                 <i class="fa-solid fa-check"></i>
+            </button>
+            <button id="btn-pdf" class="bg-red-600 active:bg-red-700 text-white py-2 px-4 rounded shadow flex items-center justify-center gap-2" title="Exportar a PDF">
+                <i class="fa-solid fa-file-pdf"></i>
             </button>
             <button id="btn-new-line" class="flex-1 bg-blue-600 active:bg-blue-700 text-white py-2 rounded shadow flex justify-center items-center gap-2">
                 <i class="fa-solid fa-plus"></i> Fórmulas

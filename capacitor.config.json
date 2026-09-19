@@ -4,5 +4,10 @@
   "webDir": "www",
   "android": {
     "webContentsDebuggingEnabled": true
+  },
+  "plugins": {
+    "SystemBars": {
+      "style": "DARK"
+    }
   }
 }
