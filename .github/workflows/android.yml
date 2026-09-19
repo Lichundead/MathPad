@@ -1,0 +1,43 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch: # permite lanzarlo a mano desde la pestaña Actions
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # Capacitor 8 necesita JDK 21
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar CSS y sincronizar Capacitor
+        run: npm run sync
+
+      - name: Construir APK de debug
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Publicar el APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mathpad-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
