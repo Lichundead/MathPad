@@ -7,8 +7,8 @@ android {
         applicationId "com.sebas.mathpad"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode project.hasProperty('appVersionCode') ? appVersionCode.toInteger() : 1
+        versionName project.hasProperty('appVersionName') ? appVersionName : "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +16,22 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    buildTypes {
+        signingConfigs {
         release {
+            def ks = file('release.keystore')
+            if (ks.exists()) {
+                storeFile ks
+                storePassword System.getenv('MATHPAD_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('MATHPAD_KEY_ALIAS')
+                keyPassword System.getenv('MATHPAD_KEY_PASSWORD')
+            }
+        }
+    }
+        buildTypes {
+        release {
+            if (file('release.keystore').exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
