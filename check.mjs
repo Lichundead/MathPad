@@ -105,4 +105,28 @@ for (const rel of cssFiles) {
 }
 assert.deepEqual(rotas, [], `url() que no resuelven:\n  ${rotas.join('\n  ')}`);
 
-console.log(`ok — ${keys.length} teclas, ${ids.size} ids, migracion v1→v2, reordenar, nombres, ${recursos} url() vendorizadas`);
+// 7. Panel inferior: con una linea de texto activa el teclado propio estorba,
+//    porque encima sale el del sistema. Y nunca puede quedar irrecuperable.
+// cadena, no deepEqual: el objeto viene del realm del vm y no comparte prototipo
+const panel = (tipo, plegado) => {
+    const r = ctx.panelState(tipo, plegado);
+    return `tabs=${r.tabs} keys=${r.keys}`;
+};
+assert.equal(panel('text', false), 'tabs=false keys=false', 'texto oculta el panel');
+assert.equal(panel('text', true), 'tabs=false keys=false', 'texto manda sobre el plegado');
+assert.equal(panel('math', false), 'tabs=true keys=true', 'matematica muestra el teclado');
+assert.equal(panel(undefined, false), 'tabs=true keys=true', 'sin linea activa, visible');
+assert.equal(panel('math', true), 'tabs=true keys=false', 'plegado deja las pestanas');
+
+// El invariante: si las teclas estan ocultas por el plegado manual, la barra de
+// pestanas -donde vive el boton de desplegar- tiene que seguir a la vista.
+for (const tipo of ['math', 'text', undefined, null]) {
+    for (const plegado of [true, false]) {
+        const { tabs, keys } = ctx.panelState(tipo, plegado);
+        if (!keys && tipo !== 'text') {
+            assert.ok(tabs, `panel irrecuperable con tipo=${tipo} plegado=${plegado}`);
+        }
+    }
+}
+
+console.log(`ok — ${keys.length} teclas, ${ids.size} ids, migracion v1→v2, reordenar, nombres, panel, ${recursos} url() vendorizadas`);

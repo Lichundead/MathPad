@@ -27,6 +27,14 @@ function legacyToDocs(data) {
 
 // Mueve el elemento de `from` a `to` y devuelve un arreglo nuevo. Fuera de rango
 // o sin movimiento, devuelve una copia intacta. La usan las flechas y el arrastre.
+// Que se ve en el panel inferior, segun el tipo de linea activa y el plegado manual.
+// Pura y fuera del closure a proposito: asi se comprueba que el boton de desplegar
+// nunca desaparece a la vez que las teclas, que dejaria un teclado irrecuperable.
+function panelState(activeType, collapsed) {
+    const esTexto = activeType === 'text';
+    return { tabs: !esTexto, keys: !esTexto && !collapsed };
+}
+
 function moveItem(arr, from, to) {
     if (from < 0 || from >= arr.length || to < 0 || to >= arr.length || from === to) return arr.slice();
     const out = arr.slice();
@@ -88,6 +96,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const captureStage = document.getElementById('capture-stage');
     const docSelect = document.getElementById('doc-select');
     const btnPdf = document.getElementById('btn-pdf');
+    const keyboardTabs = document.getElementById('keyboard-tabs');
+    const keyboardContainer = document.getElementById('keyboard-container');
+    const btnToggleKeyboard = document.getElementById('btn-toggle-keyboard');
+    let keyboardCollapsed = false;   // plegado manual, solo cuando el panel esta en juego
     const optLatex = document.getElementById('opt-latex');
 
     // --- Persistencia ---
@@ -244,7 +256,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         lineObj.rawText = e.target.value;
                         save();
                     });
-                    setTimeout(() => input.focus(), 50);
+                    // El foco se pide al final de renderEditor(), de forma sincrona:
+                    // Android solo abre el teclado del sistema si el focus() ocurre
+                    // dentro del gesto del usuario, y un setTimeout lo saca de el.
                 } else {
                     input.readOnly = true;
                     input.style.border = '1px solid transparent';
@@ -351,11 +365,35 @@ document.addEventListener('DOMContentLoaded', () => {
             editorArea.appendChild(lineEl);
         });
 
+        syncKeyboardPanel();
+
+        // Sincrono y dentro del gesto que provoco el render: es la unica forma de
+        // que Android abra el teclado del sistema. El math-field no lo necesita
+        // (su teclado es el propio) y conserva su foco diferido.
+        if (activeInputForKeyboard && activeInputForKeyboard.tagName === 'INPUT') {
+            activeInputForKeyboard.focus();
+        }
+
         if (scrollToIndex === null) {
             editorArea.scrollTop = editorArea.scrollHeight;
         } else {
             editorArea.children[scrollToIndex]?.scrollIntoView({ block: 'nearest' });
         }
+    }
+
+    // Unico sitio que decide que se ve en el panel inferior. Con una linea de texto
+    // activa manda el teclado del sistema: apilarle encima el propio dejaba el
+    // editor en una franja de una linea. La barra de acciones nunca se oculta,
+    // asi queda apoyada justo sobre el teclado nativo.
+    function syncKeyboardPanel() {
+        const activa = linesData.find(l => l.id === activeLineId);
+        const { tabs, keys } = panelState(activa && activa.type, keyboardCollapsed);
+
+        keyboardTabs.style.display = tabs ? '' : 'none';
+        keyboardContainer.style.display = keys ? '' : 'none';
+        btnToggleKeyboard.innerHTML = keyboardCollapsed
+            ? '<i class="fa-solid fa-chevron-up"></i>'
+            : '<i class="fa-solid fa-chevron-down"></i>';
     }
 
     function moveLine(from, to) {
@@ -417,6 +455,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Salir del modo edicion. Devuelve si habia algo que cerrar (lo usa el boton atras).
     function deactivate() {
         if (activeLineId === null) return false;
+        document.activeElement?.blur();   // cierra el teclado del sistema si estaba abierto
         activeLineId = null;
         renderEditor();
         return true;
@@ -750,15 +789,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    const btnToggleKeyboard = document.getElementById('btn-toggle-keyboard');
-    let keyboardVisible = true;
     btnToggleKeyboard.addEventListener('click', () => {
-        const keyboardContainer = document.getElementById('keyboard-container');
-        keyboardContainer.style.display = keyboardVisible ? 'none' : 'block';
-        btnToggleKeyboard.innerHTML = keyboardVisible
-            ? '<i class="fa-solid fa-chevron-up"></i>'
-            : '<i class="fa-solid fa-chevron-down"></i>';
-        keyboardVisible = !keyboardVisible;
+        keyboardCollapsed = !keyboardCollapsed;
+        syncKeyboardPanel();
+    });
+
+    // El teclado del sistema al abrirse o cerrarse cambia el alto util. visualViewport
+    // es el unico aviso fiable en Android; sin esto la linea en edicion queda tapada.
+    window.visualViewport?.addEventListener('resize', () => {
+        editorArea.querySelector('.line-container.active')?.scrollIntoView({ block: 'center' });
     });
 
     // [pestana, panel, display]. Una pestana nueva es una fila mas.
