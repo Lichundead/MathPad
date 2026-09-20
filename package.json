@@ -1,7 +1,7 @@
 {
   "name": "mathpad",
-  "version": "1.0.0",
-  "description": "Editor de f\u00f3rmulas matem\u00e1ticas \u2014 Capacitor/Android",
+  "version": "0.0.1",
+  "description": "Editor de fórmulas matemáticas — Capacitor/Android",
   "scripts": {
     "build:css": "tailwindcss -i ./www/css/input.css -o ./www/css/styles.css --minify",
     "serve": "cd www && python3 -m http.server 5173",
