@@ -27,26 +27,19 @@ function legacyToDocs(data) {
 
 // Mueve el elemento de `from` a `to` y devuelve un arreglo nuevo. Fuera de rango
 // o sin movimiento, devuelve una copia intacta. La usan las flechas y el arrastre.
-// Un unico valor decide el panel: 'basic' | 'greek' | 'native'. En vez de banderas
-// sueltas que se pisan, `mode` es lo que eligio el usuario y los dos hechos externos
-// -si hay un campo nativo enfocado y de que tipo es la linea activa- solo lo corrigen.
-//
-// 'native' no es un teclado propio: es apartarse para que salga el del sistema.
-// Una linea matematica no lo admite porque MathLive fija inputmode=none en su campo
-// oculto (ML__keyboard-sink), asi que enfocarla no abriria nada.
-//
-// Pura y fuera del closure para poder comprobar las transiciones sin navegador.
-function panelState(mode, nativeFocused, collapsed, activeType) {
-    const nativeUsable = nativeFocused || activeType === 'text';
-    const efectivo = nativeFocused ? 'native'
-        : (mode === 'native' && !nativeUsable) ? 'basic'
-        : mode;
-    return {
-        mode: efectivo,
-        nativeUsable,
-        keys: efectivo !== 'native' && !collapsed,
-        grid: efectivo === 'native' ? null : efectivo
-    };
+// Con el modo nativo fuera, esto vuelve a ser trivial: que pestaña esta elegida y
+// si las teclas se ven. Se ocultan por dos motivos independientes que no se pisan:
+// un campo nativo enfocado (#student-code, los dialogos) o el plegado manual.
+// Pura y fuera del closure para poder comprobarla sin navegador.
+function panelState(mode, nativeFocused, collapsed) {
+    return { mode, keys: !nativeFocused && !collapsed };
+}
+
+// Una tecla cambia de caja solo si es una letra. ',' y el espacio no, y si se les
+// aplicara, la etiqueta «Espacio» se sobrescribiria. El espacio ademas inserta
+// «\;», de dos caracteres, asi que tampoco pasa el filtro.
+function isCaseLetter(v) {
+    return typeof v === 'string' && v.length === 1 && v.toLowerCase() !== v.toUpperCase();
 }
 
 function moveItem(arr, from, to) {
@@ -102,7 +95,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const keyboardGrid = document.getElementById('keyboard-grid');
     const tabBasic = document.getElementById('tab-basic');
     const tabGreek = document.getElementById('tab-greek');
-    const tabNative = document.getElementById('tab-native');
+    const tabQwerty = document.getElementById('tab-qwerty');
+    const qwertyGrid = document.getElementById('qwerty-grid');
+    const btnShift = document.getElementById('btn-shift');
     const greekGrid = document.getElementById('greek-grid');
     const btnRenderLine = document.getElementById('btn-render-line');
     const btnShare = document.getElementById('btn-share');
@@ -113,16 +108,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const docButton = document.getElementById('doc-button');
     const docName = document.getElementById('doc-name');
     const docMenu = document.getElementById('doc-menu');
+    const dialogBackdrop = document.getElementById('dialog-backdrop');
+    const dialogTitle = document.getElementById('dialog-title');
+    const dialogInput = document.getElementById('dialog-input');
+    const dialogOk = document.getElementById('dialog-ok');
+    const dialogCancel = document.getElementById('dialog-cancel');
     const btnPdf = document.getElementById('btn-pdf');
     const keyboardContainer = document.getElementById('keyboard-container');
     const btnToggleKeyboard = document.getElementById('btn-toggle-keyboard');
     let keyboardCollapsed = false;   // plegado manual, solo cuando el panel esta en juego
-    let panelMode = 'basic';         // 'basic' | 'greek' | 'native'
+    let panelMode = 'basic';         // 'basic' | 'qwerty' | 'greek'
 
-    // [id, pestaña, rejilla]. 'native' no tiene rejilla: es apartarse del paso.
+    // [id, pestaña, rejilla]
     const TABS = [
         ['basic', tabBasic, keyboardGrid],
-        ['native', tabNative, null],
+        ['qwerty', tabQwerty, qwertyGrid],
         ['greek', tabGreek, greekGrid]
     ];
     const optLatex = document.getElementById('opt-latex');
@@ -186,6 +186,82 @@ document.addEventListener('DOMContentLoaded', () => {
         return linesData.length > 0;
     }
 
+    // --- Dialogo propio ---
+    // Un solo elemento sirve para pedir texto y para confirmar: la diferencia es si
+    // el campo se muestra. Devuelve una promesa, asi los llamadores quedan lineales.
+    let dialogResolve = null;
+
+    function dialogOpen() {
+        return !dialogBackdrop.hidden;
+    }
+
+    function closeDialog(resultado) {
+        if (!dialogResolve) return;
+        const resolver = dialogResolve;
+        dialogResolve = null;
+        dialogBackdrop.hidden = true;
+        document.activeElement?.blur();   // cierra el teclado del sistema
+        syncKeyboardPanel();
+        resolver(resultado);
+    }
+
+    // value === null: dialogo de confirmar, sin campo de texto.
+    function askDialog(titulo, value, okLabel) {
+        closeDialog(null);               // nunca dos abiertos a la vez
+        return new Promise((resolve) => {
+            dialogResolve = resolve;
+            dialogTitle.textContent = titulo;
+            dialogInput.hidden = value === null;
+            dialogInput.value = value === null ? '' : value;
+            dialogOk.textContent = okLabel || 'Aceptar';
+            dialogBackdrop.hidden = false;
+            syncDialogOk();
+            if (value === null) {
+                dialogOk.focus();
+            } else {
+                dialogInput.focus();     // abre el teclado del sistema; el panel propio se aparta solo
+                dialogInput.select();
+            }
+            syncKeyboardPanel();
+        });
+    }
+
+    const askText = (titulo, value) => askDialog(titulo, value === undefined ? '' : value, 'Guardar');
+    const askConfirm = (titulo) => askDialog(titulo, null, 'Borrar');
+
+    // Un nombre vacio no sirve: se deshabilita el boton en vez de aceptarlo.
+    function syncDialogOk() {
+        dialogOk.disabled = !dialogInput.hidden && dialogInput.value.trim() === '';
+    }
+
+    dialogInput.addEventListener('input', syncDialogOk);
+    dialogOk.addEventListener('click', () => closeDialog(dialogInput.hidden ? true : dialogInput.value.trim()));
+    dialogCancel.addEventListener('click', () => closeDialog(dialogInput.hidden ? false : null));
+
+    // Tocar fuera cierra; el clic en el propio dialogo no burbujea hasta aqui.
+    dialogBackdrop.addEventListener('pointerdown', (e) => {
+        if (e.target === dialogBackdrop) closeDialog(dialogInput.hidden ? false : null);
+    });
+
+    dialogBackdrop.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            closeDialog(dialogInput.hidden ? false : null);
+            return;
+        }
+        if (e.key === 'Enter' && !dialogOk.disabled) {
+            e.preventDefault();
+            closeDialog(dialogInput.hidden ? true : dialogInput.value.trim());
+            return;
+        }
+        if (e.key !== 'Tab') return;
+        // Foco atrapado: el tabulador solo circula entre los controles del dialogo.
+        const focusables = [dialogInput, dialogCancel, dialogOk].filter(el => !el.hidden);
+        const i = focusables.indexOf(document.activeElement);
+        const paso = e.shiftKey ? -1 : 1;
+        focusables[(i + paso + focusables.length) % focusables.length].focus();
+        e.preventDefault();
+    });
+
     function renderDocMenu() {
         docName.textContent = currentDoc() ? currentDoc().name : '';
         docMenu.innerHTML = '';
@@ -214,17 +290,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Sin esto el documento inicial se llamaba siempre «Procedimiento 1» y no
         // habia forma de cambiarlo: de ahi que el nombre del PDF pareciera generico.
-        opcion('✏️ Renombrar…', () => {
+        opcion('✏️ Renombrar…', async () => {
             closeDocMenu();
-            const nuevo = (prompt('Nuevo nombre:', currentDoc().name) || '').trim();
-            if (nuevo) currentDoc().name = nuevo;
+            const nuevo = await askText('Nuevo nombre del procedimiento', currentDoc().name);
+            if (!nuevo) return;          // cancelado: se conserva el anterior
+            currentDoc().name = nuevo;
             renderDocMenu();
             save();
         });
 
-        opcion('➕ Nuevo…', () => {
+        opcion('➕ Nuevo…', async () => {
             closeDocMenu();
-            const name = (prompt('Nombre del procedimiento:') || '').trim();
+            const name = await askText('Nombre del procedimiento');
             if (!name) return;
             save();
             const doc = newDoc(name);
@@ -302,11 +379,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 input.placeholder = index === 0
                     ? 'Escribe el enunciado del problema aquí...'
                     : 'Describe tu paso aquí (Ej. Despejando x)...';
-                // Sin inputmode="none": el teclado del sistema es mejor para prosa
-                // (autocorreccion, prediccion, acentos). Tampoco se le apaga la
-                // correccion, que es justo lo que se venia a ganar.
+                // Evita que Android abra su propio teclado encima del nuestro
+                input.setAttribute('inputmode', 'none');
                 input.setAttribute('autocomplete', 'off');
-                input.setAttribute('autocapitalize', 'sentences');
+                input.setAttribute('autocorrect', 'off');
+                input.setAttribute('autocapitalize', 'off');
+                input.spellcheck = false;
 
                 if (lineObj.id === activeLineId) {
                     input.classList.add('border', 'border-gray-300', 'rounded', 'bg-gray-50');
@@ -315,9 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         lineObj.rawText = e.target.value;
                         save();
                     });
-                    // El foco se pide al final de renderEditor(), de forma sincrona:
-                    // Android solo abre el teclado del sistema si el focus() ocurre
-                    // dentro del gesto del usuario, y un setTimeout lo saca de el.
+                    setTimeout(() => input.focus(), 50);
                 } else {
                     input.readOnly = true;
                     input.style.border = '1px solid transparent';
@@ -426,13 +502,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         syncKeyboardPanel();
 
-        // Sincrono y dentro del gesto que provoco el render: es la unica forma de
-        // que Android abra el teclado del sistema. El math-field no lo necesita
-        // (su teclado es el propio) y conserva su foco diferido.
-        if (activeInputForKeyboard && activeInputForKeyboard.tagName === 'INPUT') {
-            activeInputForKeyboard.focus();
-        }
-
         if (scrollToIndex === null) {
             editorArea.scrollTop = editorArea.scrollHeight;
         } else {
@@ -445,8 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // editor en una franja de una linea. La barra de acciones nunca se oculta,
     // asi queda apoyada justo sobre el teclado nativo.
     function syncKeyboardPanel() {
-        const activa = linesData.find(l => l.id === activeLineId);
-        const st = panelState(panelMode, hayCampoNativoEnfocado(), keyboardCollapsed, activa && activa.type);
+        const st = panelState(panelMode, hayCampoNativoEnfocado(), keyboardCollapsed);
 
         TABS.forEach(([id, tab, grid]) => {
             const on = id === st.mode;
@@ -454,11 +522,8 @@ document.addEventListener('DOMContentLoaded', () => {
             tab.classList.toggle('border-b-2', on);
             tab.classList.toggle('border-blue-600', on);
             tab.classList.toggle('text-gray-500', !on);
-            if (grid) grid.style.display = st.grid === id ? 'grid' : 'none';
+            grid.style.display = on ? (id === 'qwerty' ? 'flex' : 'grid') : 'none';
         });
-
-        tabNative.disabled = !st.nativeUsable;
-        tabNative.classList.toggle('opacity-30', !st.nativeUsable);
 
         keyboardContainer.style.display = st.keys ? '' : 'none';
         btnToggleKeyboard.innerHTML = keyboardCollapsed
@@ -820,6 +885,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.math-key[data-insert]').forEach(btn => {
         bindKey(btn, () => {
             const { insert, text } = btn.dataset;
+            if (shift) setShift(false);   // un solo uso, como en cualquier teclado de movil
             if (activeLineId === null) {
                 createNewLine('math');
                 setTimeout(() => insertTextAtCursor(insert, text), 80);
@@ -842,14 +908,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const capApp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
     if (capApp) {
         capApp.addListener('backButton', () => {
+            if (dialogOpen()) return closeDialog(dialogInput.hidden ? false : null);
             if (docMenuOpen()) return closeDocMenu();
             if (!deactivate()) capApp.exitApp();
         });
     }
 
-    btnClear.addEventListener('click', () => {
+    btnClear.addEventListener('click', async () => {
         if (docs.length > 1) {
-            if (!confirm(`¿Borrar el procedimiento «${currentDoc().name}»?`)) return;
+            if (!await askConfirm(`¿Borrar el procedimiento «${currentDoc().name}»?`)) return;
             docs = docs.filter(d => d.id !== activeDocId);
             loadDoc(docs[0].id);
             save();
@@ -857,7 +924,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (confirm('¿Estás seguro de borrar todo el procedimiento?')) {
+        if (await askConfirm('¿Borrar todo el procedimiento?')) {
             linesData = [];
             lineCounter = 1;
             activeLineId = null;
@@ -880,18 +947,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // [pestana, panel, display]. Una pestana nueva es una fila mas.
     TABS.forEach(([id, tab]) => tab.addEventListener('click', () => {
-        if (id === 'native') {
-            // Sincrono y dentro del gesto, sin render de por medio: es la unica
-            // forma de que Android abra su teclado.
-            if (activeInputForKeyboard && activeInputForKeyboard.tagName === 'INPUT') {
-                activeInputForKeyboard.focus();
-            }
-        } else if (hayCampoNativoEnfocado()) {
-            document.activeElement.blur();   // cierra el teclado del sistema
-        }
         panelMode = id;
         syncKeyboardPanel();
     }));
+
+    // Mayusculas: reescribe data-insert y la etiqueta de las teclas de letra.
+    let shift = false;
+
+    function setShift(on) {
+        shift = on;
+        btnShift.classList.toggle('shift-on', on);
+        qwertyGrid.querySelectorAll('.math-key[data-insert]').forEach(k => {
+            const v = k.dataset.insert;
+            if (!isCaseLetter(v)) return;
+            k.dataset.insert = on ? v.toUpperCase() : v.toLowerCase();
+            k.textContent = k.dataset.insert;
+        });
+    }
+
+    bindKey(btnShift, () => setShift(!shift));
 
     // El panel depende del foco, asi que hay que reaccionar a el. focusout dispara
     // antes de que el nuevo elemento lo reciba: se lee al tick siguiente.

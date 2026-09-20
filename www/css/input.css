@@ -176,6 +176,88 @@
         background-color: #e5e7eb;
     }
 
+    /* Mayusculas activas. Clase propia, no utilidades de Tailwind: asi el estilo
+       no depende de que ninguna otra regla le gane por especificidad. */
+    .btn-shift.shift-on {
+        background-color: #1a73e8;
+        color: #ffffff;
+    }
+
+    /* Dialogo propio, en el DOM */
+    .dialog-backdrop {
+        position: fixed;
+        inset: 0;
+        background-color: rgba(0, 0, 0, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        z-index: 100;
+    }
+
+    .dialog-backdrop[hidden] {
+        display: none;
+    }
+
+    .dialog {
+        width: 100%;
+        max-width: 340px;
+        background-color: #ffffff;
+        color: #1f2937;
+        border-radius: 12px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        padding: 20px;
+    }
+
+    .dialog-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 14px;
+    }
+
+    .dialog-input {
+        width: 100%;
+        font-size: 1rem;
+        padding: 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        outline: none;
+        margin-bottom: 16px;
+    }
+
+    .dialog-input:focus {
+        border-color: #3b82f6;
+    }
+
+    .dialog-input[hidden] {
+        display: none;
+    }
+
+    .dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+    }
+
+    .dialog-btn {
+        min-height: 44px;        /* objetivo tactil */
+        padding: 0 18px;
+        border-radius: 8px;
+        font-size: 0.95rem;
+        font-weight: 500;
+        background-color: #f3f4f6;
+        color: #374151;
+    }
+
+    .dialog-btn-primary {
+        background-color: #2563eb;
+        color: #ffffff;
+    }
+
+    .dialog-btn:disabled {
+        opacity: 0.4;
+    }
+
     .inline-input {
         width: 100%;
         font-size: 1.1rem;

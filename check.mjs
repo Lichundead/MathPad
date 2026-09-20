@@ -105,53 +105,47 @@ for (const rel of cssFiles) {
 }
 assert.deepEqual(rotas, [], `url() que no resuelven:\n  ${rotas.join('\n  ')}`);
 
-// 7. Panel inferior. Un unico valor de modo, corregido por dos hechos externos.
-// cadena, no deepEqual: el objeto viene del realm del vm y no comparte prototipo
-const panel = (mode, foco, plegado, tipo) => {
-    const r = ctx.panelState(mode, foco, plegado, tipo);
-    return `mode=${r.mode} keys=${r.keys} grid=${r.grid} nativeUsable=${r.nativeUsable}`;
+// 7. Panel inferior. Dos motivos independientes lo ocultan y no deben pisarse.
+const panel = (mode, foco, plegado) => {
+    const r = ctx.panelState(mode, foco, plegado);
+    return `mode=${r.mode} keys=${r.keys}`;   // cadena: el objeto viene del realm del vm
 };
-
-// linea de texto: la pestaña «Teclado» sirve, y con el campo enfocado el panel se aparta
-assert.equal(panel('basic', true, false, 'text'), 'mode=native keys=false grid=null nativeUsable=true',
-    'campo enfocado aparta el teclado propio');
-assert.equal(panel('basic', false, false, 'text'), 'mode=basic keys=true grid=basic nativeUsable=true',
-    'sin foco vuelve la eleccion del usuario');
-
-// cualquier campo nativo, no solo el de una linea de texto (p.ej. #student-code)
-assert.equal(panel('greek', true, false, 'math'), 'mode=native keys=false grid=null nativeUsable=true',
-    'un campo del encabezado tambien aparta el panel');
-
-// linea matematica: MathLive pone inputmode=none, asi que 'native' no llegaria a abrir nada
-assert.equal(panel('native', false, false, 'math'), 'mode=basic keys=true grid=basic nativeUsable=false',
-    'en matematica, native cae a basic y la pestaña queda deshabilitada');
-assert.equal(panel('greek', false, false, 'math'), 'mode=greek keys=true grid=greek nativeUsable=false',
-    'greek se respeta en matematica');
-
-// el plegado manual solo aplica a las rejillas propias
-assert.equal(panel('basic', false, true, 'math'), 'mode=basic keys=false grid=basic nativeUsable=false',
-    'plegado oculta las teclas sin cambiar de modo');
-
-// Invariantes sobre todas las combinaciones.
-for (const mode of ['basic', 'greek', 'native']) {
+assert.equal(panel('basic', false, false), 'mode=basic keys=true', 'sin nada de por medio, visible');
+assert.equal(panel('qwerty', true, false), 'mode=qwerty keys=false', 'campo nativo enfocado aparta el panel');
+assert.equal(panel('greek', false, true), 'mode=greek keys=false', 'plegado manual oculta las teclas');
+assert.equal(panel('greek', true, true), 'mode=greek keys=false', 'ambos a la vez');
+for (const mode of ['basic', 'qwerty', 'greek']) {
     for (const foco of [true, false]) {
         for (const plegado of [true, false]) {
-            for (const tipo of ['math', 'text', undefined]) {
-                const r = ctx.panelState(mode, foco, plegado, tipo);
-                assert.ok(['basic', 'greek', 'native'].includes(r.mode), `modo invalido: ${r.mode}`);
-                // La eleccion del usuario nunca se pierde: 'native' solo se corrige
-                // cuando de verdad no puede funcionar.
-                assert.ok(r.mode !== 'native' || r.nativeUsable,
-                    `native sin poder usarse (mode=${mode} foco=${foco} tipo=${tipo})`);
-                // En modo nativo no puede quedar una rejilla propia encima.
-                assert.ok(r.mode !== 'native' || (!r.keys && r.grid === null),
-                    `dos teclados apilados (mode=${mode} foco=${foco} tipo=${tipo})`);
-                // Si se ven teclas, hay exactamente una rejilla que mostrar.
-                assert.equal(r.keys, r.grid !== null && !plegado,
-                    `keys y grid incoherentes (mode=${mode} foco=${foco} tipo=${tipo})`);
-            }
+            const r = ctx.panelState(mode, foco, plegado);
+            assert.equal(r.mode, mode, 'la pestaña elegida nunca se pierde');
+            assert.equal(r.keys, !foco && !plegado, `keys incoherente (${mode}/${foco}/${plegado})`);
         }
     }
 }
 
-console.log(`ok — ${keys.length} teclas, ${ids.size} ids, migracion v1→v2, reordenar, nombres, panel, ${recursos} url() vendorizadas`);
+// 8. Ni un solo dialogo del sistema: el WebView los dibuja fuera del documento,
+//    sin CSS ni safe-area. Deben pasar todos por el dialogo propio.
+for (const fn of ['prompt(', 'confirm(', 'alert(']) {
+    assert.ok(!js.includes(fn), `queda un ${fn}) del sistema en app.js`);
+}
+
+// 9. La barra espaciadora necesita las dos formas: en LaTeX un espacio literal se
+//    colapsa y no se ve, asi que inserta un comando de espaciado.
+const espacio = /<div class="math-key[^"]*"([^>]*data-insert="\\;"[^>]*)>/.exec(html);
+assert.ok(espacio, 'no se encontro la tecla de espacio con data-insert=\'\\;\'');
+assert.ok(/data-text=" "/.test(espacio[1]), 'la tecla de espacio necesita data-text=" "');
+assert.equal(ctx.isCaseLetter('\\;'), false, 'el espacio no debe cambiar de caja');
+
+// 10. Digitos del qwerty, y que las mayusculas no los alteren.
+const qwerty = html.split('Teclado QWERTY')[1].split('Teclado Griego')[0];
+const inserts = [...qwerty.matchAll(/data-insert="([^"]*)"/g)].map(m => m[1]);
+for (const d of '1234567890') {
+    assert.ok(inserts.includes(d), `falta el digito ${d} en #qwerty-grid`);
+    assert.equal(ctx.isCaseLetter(d), false, `el digito ${d} no debe cambiar de caja`);
+}
+for (const v of inserts) {
+    assert.equal(ctx.isCaseLetter(v), /^[a-zñáéíóúü]$/.test(v), `isCaseLetter(${JSON.stringify(v)})`);
+}
+
+console.log(`ok — ${keys.length} teclas, ${ids.size} ids, migracion v1→v2, reordenar, nombres, panel, dialogos, ${recursos} url() vendorizadas`);
