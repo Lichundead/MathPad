@@ -5,6 +5,9 @@ on:
     branches: [main, master]
   workflow_dispatch: # permite lanzarlo a mano desde la pestaña Actions
 
+permissions:
+  contents: write # crear el Release y subirle el APK
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -36,9 +39,15 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Publicar el APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: mathpad-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 30
+      # Release fijo «latest»: siempre el mismo enlace de descarga, siempre el APK
+      # de la ultima build. Se borra y se recrea para que el tag, las notas y el
+      # commit no se desincronicen. gh ya viene instalado en el runner.
+      - name: Publicar el APK como Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk MathPad.apk
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest MathPad.apk \
+            --title "MathPad — última versión" \
+            --notes "Build automática del commit ${{ github.sha }}"

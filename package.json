@@ -10,8 +10,6 @@
     "apk": "npm run sync && cd android && ./gradlew assembleDebug",
     "check": "node check.mjs"
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
   "dependencies": {
     "@capacitor/app": "^8.1.1",

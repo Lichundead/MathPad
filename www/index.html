@@ -57,7 +57,11 @@
             <button id="tab-basic" class="px-3 py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600 focus:outline-none">Básico</button>
             <button id="tab-qwerty" class="px-3 py-2 text-sm font-medium text-gray-500 focus:outline-none">Teclado</button>
             <button id="tab-greek" class="px-3 py-2 text-sm font-medium text-gray-500 focus:outline-none">αβγ</button>
-            <button class="px-3 py-2 text-sm font-medium text-gray-500 focus:outline-none ml-auto" id="btn-toggle-keyboard">
+            <label class="ml-auto flex items-center gap-1 px-2 text-xs text-gray-500 select-none cursor-pointer"
+                   title="Incluir el código LaTeX de cada ecuación en el PDF">
+                <input type="checkbox" id="opt-latex" class="w-4 h-4 accent-blue-600"> LaTeX
+            </label>
+            <button class="px-3 py-2 text-sm font-medium text-gray-500 focus:outline-none" id="btn-toggle-keyboard">
                 <i class="fa-solid fa-chevron-down"></i>
             </button>
         </div>
@@ -109,6 +113,18 @@
             <!-- Teclado QWERTY -->
             <div class="flex-col gap-2 p-2 bg-gray-100" id="qwerty-grid" style="display: none;">
                 <div class="flex justify-between gap-1 w-full">
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="1">1</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="2">2</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="3">3</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="4">4</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="5">5</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="6">6</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="7">7</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="8">8</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="9">9</div>
+                    <div class="math-key flex-1 px-0 text-lg" data-insert="0">0</div>
+                </div>
+                <div class="flex justify-between gap-1 w-full">
                     <div class="math-key flex-1 px-0 text-lg" data-insert="q">q</div>
                     <div class="math-key flex-1 px-0 text-lg" data-insert="w">w</div>
                     <div class="math-key flex-1 px-0 text-lg" data-insert="e">e</div>
@@ -143,7 +159,7 @@
                     <div class="math-key flex-1 px-0 text-lg" data-insert="b">b</div>
                     <div class="math-key flex-1 px-0 text-lg" data-insert="n">n</div>
                     <div class="math-key flex-1 px-0 text-lg" data-insert="m">m</div>
-                    <div class="math-key flex-[1.5] text-red-500 font-bold bg-red-50 border-red-200 btn-backspace px-0">
+                    <div class="math-key flex-[1.5] btn-backspace px-0">
                         <i class="fa-solid fa-delete-left"></i>
                     </div>
                 </div>

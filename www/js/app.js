@@ -32,6 +32,44 @@ function legacyToDocs(data) {
     return [newDoc('Procedimiento 1', data.lines, data.counter)];
 }
 
+// Mueve el elemento de `from` a `to` y devuelve un arreglo nuevo. Fuera de rango
+// o sin movimiento, devuelve una copia intacta. La usan las flechas y el arrastre.
+function moveItem(arr, from, to) {
+    if (from < 0 || from >= arr.length || to < 0 || to >= arr.length || from === to) return arr.slice();
+    const out = arr.slice();
+    out.splice(to, 0, out.splice(from, 1)[0]);
+    return out;
+}
+
+// Un nombre de archivo no puede llevar separadores de ruta ni caracteres de control.
+// Se quitan tambien los puntos finales, que Windows descarta en silencio.
+function sanitizeFilePart(value) {
+    return String(value == null ? '' : value)
+        .replace(/[/\\:*?"<>|]/g, '')
+        .replace(/[\u0000-\u001f\u007f]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/\.+$/, '')
+        .trim();
+}
+
+// Recorta en bytes, no en caracteres: en UTF-8 una vocal acentuada ocupa dos y el
+// limite de ~255 de muchos sistemas de archivos se mide en bytes.
+// ponytail: quita de a un caracter; con un limite de 255 no compensa nada mejor.
+function truncateBytes(text, maxBytes) {
+    const enc = new TextEncoder();
+    let out = text;
+    while (enc.encode(out).length > maxBytes && out.length > 0) out = out.slice(0, -1);
+    return out.trim();
+}
+
+// «codigo - nombre.ext». Si falta una parte se usa solo la otra, y si faltan las
+// dos, un nombre con la fecha: nunca un « - algo.pdf» cojo.
+function buildExportName(studentCode, docName, ext, today) {
+    const parts = [sanitizeFilePart(studentCode), sanitizeFilePart(docName)].filter(Boolean);
+    const base = parts.join(' - ') || `MathPad ${today}`;
+    return `${truncateBytes(base, 255 - ext.length - 1)}.${ext}`;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- Estado ---
@@ -60,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const captureStage = document.getElementById('capture-stage');
     const docSelect = document.getElementById('doc-select');
     const btnPdf = document.getElementById('btn-pdf');
+    const optLatex = document.getElementById('opt-latex');
 
     // --- Persistencia ---
     function currentDoc() {
@@ -76,7 +115,8 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem(STORAGE_KEY, JSON.stringify({
                 docs,
                 activeDocId,
-                studentCode: studentCodeInput.value
+                studentCode: studentCodeInput.value,
+                includeLatex: optLatex.checked
             }));
         } catch (e) {
             console.warn('No se pudo guardar:', e);
@@ -104,6 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (Array.isArray(data.docs)) docs = data.docs;
                 activeDocId = data.activeDocId;
                 if (data.studentCode) studentCodeInput.value = data.studentCode;
+                optLatex.checked = !!data.includeLatex;
             } else {
                 migrateLegacy();
             }
@@ -161,17 +202,20 @@ document.addEventListener('DOMContentLoaded', () => {
         save();
     }
 
-    function renderEditor() {
+    // scrollToIndex: null = al final (linea nueva). Un indice = deja esa linea a la
+    // vista, que es lo que hace falta al reordenar; el salto al final estorbaria.
+    function renderEditor(scrollToIndex = null) {
         editorArea.innerHTML = '';
         activeInputForKeyboard = null;
 
         linesData.forEach((lineObj, index) => {
             const lineEl = document.createElement('div');
             lineEl.className = 'line-container' + (lineObj.id === activeLineId ? ' active' : '');
+            lineEl.dataset.index = index;   // lo lee elementFromPoint al arrastrar
 
             const numEl = document.createElement('div');
             numEl.className = 'line-number';
-            numEl.textContent = index + '.';
+            numEl.textContent = (index + 1) + '.';   // la profesora cuenta desde 1
 
             const contentEl = document.createElement('div');
             contentEl.className = 'line-content w-full flex items-center';
@@ -246,15 +290,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 contentEl.appendChild(mf);
             }
 
+            const handle = document.createElement('div');
+            handle.className = 'drag-handle w-6 shrink-0 self-stretch flex items-center justify-center text-gray-300 active:text-blue-600';
+            handle.innerHTML = '<i class="fa-solid fa-grip-vertical"></i>';
+            handle.setAttribute('aria-label', `Arrastrar la línea ${index + 1}`);
+            handle.addEventListener('pointerdown', (e) => startDrag(e, index));
+
+            lineEl.appendChild(handle);
             lineEl.appendChild(numEl);
             lineEl.appendChild(contentEl);
 
-            // --- Borrar línea ---
+            // --- Reordenar y borrar ---
             const actionEl = document.createElement('div');
-            actionEl.className = 'px-2 flex items-center justify-center';
+            actionEl.className = 'flex items-center justify-center shrink-0';
+
+            // Click normal, no bindKey: aqui se re-renderiza igual, no hay foco que conservar.
+            const arrow = (icon, label, to) => {
+                const b = document.createElement('button');
+                b.className = 'w-10 h-10 rounded-full flex items-center justify-center text-gray-400 active:text-blue-600 disabled:opacity-25 transition-colors focus:outline-none';
+                b.innerHTML = `<i class="fa-solid ${icon}"></i>`;
+                b.setAttribute('aria-label', label);
+                b.disabled = to < 0 || to >= linesData.length;   // a la vista, no escondida
+                b.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    moveLine(index, to);
+                });
+                return b;
+            };
+
+            actionEl.appendChild(arrow('fa-chevron-up', `Subir la línea ${index + 1}`, index - 1));
+            actionEl.appendChild(arrow('fa-chevron-down', `Bajar la línea ${index + 1}`, index + 1));
 
             const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'text-gray-300 active:text-red-500 w-8 h-8 rounded-full flex items-center justify-center transition-colors focus:outline-none';
+            deleteBtn.setAttribute('aria-label', `Borrar la línea ${index + 1}`);
+            deleteBtn.className = 'text-gray-300 active:text-red-500 w-10 h-10 rounded-full flex items-center justify-center transition-colors focus:outline-none';
             deleteBtn.title = 'Borrar línea';
             deleteBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
             if (lineObj.id === activeLineId) {
@@ -281,7 +350,67 @@ document.addEventListener('DOMContentLoaded', () => {
             editorArea.appendChild(lineEl);
         });
 
-        editorArea.scrollTop = editorArea.scrollHeight;
+        if (scrollToIndex === null) {
+            editorArea.scrollTop = editorArea.scrollHeight;
+        } else {
+            editorArea.children[scrollToIndex]?.scrollIntoView({ block: 'nearest' });
+        }
+    }
+
+    function moveLine(from, to) {
+        const moved = linesData[from];
+        linesData = moveItem(linesData, from, to);
+        save();
+        renderEditor(linesData.indexOf(moved));   // la linea movida queda a la vista
+    }
+
+    // --- Arrastrar para reordenar ---
+    // No se re-renderiza durante el gesto: eso destruiria el math-field que esta bajo
+    // el dedo y rompeia la captura del puntero. Solo se marca el destino, y se
+    // confirma una unica vez al soltar.
+    let drag = null;
+
+    function markDropTarget(index) {
+        [...editorArea.children].forEach((row, i) => row.classList.toggle('drop-target', i === index));
+    }
+
+    function startDrag(e, from) {
+        if (linesData.length < 2) return;
+        e.preventDefault();                       // sin esto el gesto se lo lleva el scroll
+        drag = { from, to: from, handle: e.currentTarget };
+        editorArea.children[from].classList.add('dragging');
+        e.currentTarget.setPointerCapture(e.pointerId);
+        e.currentTarget.addEventListener('pointermove', onDragMove);
+        e.currentTarget.addEventListener('pointerup', endDrag);
+        e.currentTarget.addEventListener('pointercancel', endDrag);
+    }
+
+    function onDragMove(e) {
+        if (!drag) return;
+        const row = document.elementFromPoint(e.clientX, e.clientY);
+        const target = row && row.closest ? row.closest('.line-container') : null;
+        if (target && target.dataset.index !== undefined) {
+            drag.to = Number(target.dataset.index);
+            markDropTarget(drag.to);
+        }
+        // Desplaza al acercarse a los bordes, para poder mover mas alla de lo visible.
+        // ponytail: solo avanza mientras el dedo se mueve; si hiciera falta que siga
+        // con el dedo quieto, un bucle con requestAnimationFrame.
+        const box = editorArea.getBoundingClientRect();
+        if (e.clientY < box.top + 48) editorArea.scrollTop -= 12;
+        else if (e.clientY > box.bottom - 48) editorArea.scrollTop += 12;
+    }
+
+    function endDrag(e) {
+        if (!drag) return;
+        const { from, to, handle } = drag;
+        drag = null;
+        handle.removeEventListener('pointermove', onDragMove);
+        handle.removeEventListener('pointerup', endDrag);
+        handle.removeEventListener('pointercancel', endDrag);
+        try { handle.releasePointerCapture(e.pointerId); } catch (err) { /* ya liberado */ }
+        if (to !== from) moveLine(from, to);
+        else renderEditor(from);                  // limpia las marcas del arrastre
     }
 
     // Salir del modo edicion. Devuelve si habia algo que cerrar (lo usa el boton atras).
@@ -309,9 +438,9 @@ document.addEventListener('DOMContentLoaded', () => {
         linesData.forEach((line, index) => {
             if (line.rawText && line.rawText.trim() !== '') {
                 if (line.type === 'text') {
-                    promptText += `[Línea ${index}] (Texto): ${line.rawText}\n`;
+                    promptText += `[Línea ${index + 1}] (Texto): ${line.rawText}\n`;
                 } else {
-                    promptText += `[Línea ${index}] (Ecuación): $$ ${line.rawText} $$\n`;
+                    promptText += `[Línea ${index + 1}] (Ecuación): $$ ${line.rawText} $$\n`;
                 }
             }
         });
@@ -319,36 +448,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return promptText;
     }
 
+    // Capacitor sirve por https://localhost y `npm run serve` por http://localhost:
+    // los dos son contextos seguros, asi que la API moderna siempre esta disponible.
     async function copyToClipboard(text) {
-        // API moderna (funciona en el WebView de Capacitor, que sirve por https://localhost)
-        if (navigator.clipboard && window.isSecureContext) {
-            try {
-                await navigator.clipboard.writeText(text);
-                return true;
-            } catch (e) {
-                /* cae al método antiguo */
-            }
-        }
-
-        // Fallback: textarea fuera de pantalla + execCommand
-        const textArea = document.createElement('textarea');
-        textArea.value = text;
-        textArea.setAttribute('readonly', '');
-        textArea.style.position = 'fixed';
-        textArea.style.top = '-9999px';
-        textArea.style.left = '-9999px';
-        document.body.appendChild(textArea);
-        textArea.select();
-        textArea.setSelectionRange(0, 99999);
-        let ok = false;
         try {
-            ok = document.execCommand('copy');
-        } catch (err) {
-            console.error('Error al copiar:', err);
-        } finally {
-            document.body.removeChild(textArea);
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (e) {
+            console.error('Error al copiar:', e);
+            return false;
         }
-        return ok;
     }
 
     btnEvalIA.addEventListener('click', async () => {
@@ -364,11 +473,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     studentCodeInput.addEventListener('input', save);
+    optLatex.addEventListener('change', save);
 
     // --- Compartir como imagen ---
     // html2canvas NO ve dentro del Shadow DOM de MathLive, así que reconstruimos
     // el procedimiento con KaTeX (DOM normal) en un lienzo oculto y capturamos eso.
-    function buildCaptureStage() {
+    function buildCaptureStage(withLatex) {
         captureStage.innerHTML = '';
         linesData.forEach((lineObj, index) => {
             if (!lineObj.rawText || !lineObj.rawText.trim()) return;
@@ -378,7 +488,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const num = document.createElement('div');
             num.className = 'capture-num';
-            num.textContent = index + '.';
+            num.textContent = (index + 1) + '.';
 
             const body = document.createElement('div');
             if (lineObj.type === 'text') {
@@ -396,13 +506,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
+            if (withLatex && lineObj.type !== 'text') {
+                const tex = document.createElement('div');
+                tex.className = 'capture-tex';
+                tex.textContent = lineObj.rawText;
+                body.appendChild(tex);
+            }
+
             row.appendChild(num);
             row.appendChild(body);
             captureStage.appendChild(row);
         });
     }
 
-    async function shareBlob(blob, ext) {
+    function exportName(ext) {
+        return buildExportName(
+            studentCodeInput.value,
+            currentDoc()?.name ?? '',
+            ext,
+            new Date().toISOString().slice(0, 10)
+        );
+    }
+
+    async function shareBlob(blob, fileName) {
         const cap = window.Capacitor;
         const isNative = !!(cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform());
 
@@ -415,7 +541,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const { Filesystem, Share } = cap.Plugins;
-            const fileName = `mathpad_${Date.now()}.${ext}`;
             const written = await Filesystem.writeFile({
                 path: fileName,
                 data: base64,
@@ -429,7 +554,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Ruta web (navegador de escritorio o móvil)
-        const file = new File([blob], `mathpad_procedimiento.${ext}`, { type: blob.type });
+        const file = new File([blob], fileName, { type: blob.type });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
             await navigator.share({ title: 'Mi Procedimiento Matemático', files: [file] });
             return;
@@ -437,16 +562,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `mathpad_procedimiento.${ext}`;
+        a.download = fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        showToast(ext === 'pdf' ? 'PDF descargado' : 'Imagen descargada');
+        showToast(fileName.endsWith('.pdf') ? 'PDF descargado' : 'Imagen descargada');
     }
 
-    async function renderCanvas() {
-        buildCaptureStage();
+    async function renderCanvas(withLatex = false) {
+        buildCaptureStage(withLatex);
         await new Promise(r => setTimeout(r, 250)); // deja que KaTeX pinte
         return html2canvas(captureStage, {
             backgroundColor: '#ffffff',
@@ -473,7 +598,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 try {
-                    await shareBlob(blob, 'png');
+                    await shareBlob(blob, exportName('png'));
                 } catch (err) {
                     console.log('Compartir cancelado o falló:', err);
                 }
@@ -495,7 +620,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         showToast('Generando PDF...');
         try {
-            const canvas = await renderCanvas();
+            const canvas = await renderCanvas(optLatex.checked);
             const pdf = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' });
             const margin = 24;
             const width = pdf.internal.pageSize.getWidth() - margin * 2;
@@ -512,7 +637,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 pdf.addImage(img, 'PNG', margin, margin - offset, width, height);
             }
 
-            await shareBlob(pdf.output('blob'), 'pdf');
+            await shareBlob(pdf.output('blob'), exportName('pdf'));
         } catch (error) {
             console.error('Error al generar PDF:', error);
             showToast('Error al generar el PDF');
@@ -581,8 +706,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setShift(on) {
         shift = on;
-        btnShift.classList.toggle('bg-blue-100', on);
-        btnShift.classList.toggle('text-blue-700', on);
+        // Clase propia, no utilidades: el gris de #qwerty-grid .btn-shift les gana
+        // por especificidad y el resaltado no se veria.
+        btnShift.classList.toggle('shift-on', on);
         qwertyGrid.querySelectorAll('.math-key[data-insert]').forEach(k => {
             const v = k.dataset.insert;
             if (!isCaseLetter(v)) return;

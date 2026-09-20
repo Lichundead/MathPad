@@ -1,5 +1,5 @@
 // Comprobaciones sin navegador ni dependencias. Corren dentro de `npm run sync`.
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import assert from 'node:assert/strict';
 
@@ -26,7 +26,8 @@ assert.deepEqual(faltan, [], `getElementById sin elemento: ${faltan.join(', ')}`
 
 // 3. Migracion v1 -> v2: la ruta donde se pierde el trabajo del estudiante.
 //    Se ejecuta el app.js real; el cuerpo de DOMContentLoaded no llega a correr.
-const ctx = { window: {}, document: { addEventListener() {} } };
+//    TextEncoder es global en el navegador, pero no en un contexto de vm pelado.
+const ctx = { window: {}, document: { addEventListener() {} }, TextEncoder };
 runInNewContext(js, ctx);
 
 // counter distinto de lines.length+1 a proposito: si no, un bug que lo recalcule
@@ -55,4 +56,69 @@ for (const v of inserts) {
     assert.equal(ctx.isCaseLetter(v), esperado, `isCaseLetter(${JSON.stringify(v)})`);
 }
 
-console.log(`ok — ${keys.length} teclas, ${ids.size} ids, migracion v1→v2, mayusculas`);
+// 5. Fila de digitos en el qwerty, y que las mayusculas no los toquen.
+for (const d of '1234567890') {
+    assert.ok(inserts.includes(d), `falta el digito ${d} en #qwerty-grid`);
+    assert.equal(ctx.isCaseLetter(d), false, `el digito ${d} no debe cambiar de caja`);
+}
+
+// 6. Reordenar no pierde ni duplica lineas.
+const lineas = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
+const orden = a => a.map(l => l.id).join(',');
+assert.equal(orden(ctx.moveItem(lineas, 3, 1)), '1,4,2,3', 'subir del final al indice 1');
+assert.equal(orden(ctx.moveItem(lineas, 0, 3)), '2,3,4,1', 'bajar del inicio al final');
+assert.equal(orden(ctx.moveItem(lineas, 1, 1)), '1,2,3,4', 'mover al mismo sitio no cambia nada');
+for (const [from, to] of [[-1, 0], [0, -1], [0, 4], [9, 0]]) {
+    assert.equal(orden(ctx.moveItem(lineas, from, to)), '1,2,3,4', `fuera de rango ${from}->${to}`);
+}
+for (let from = 0; from < lineas.length; from++) {
+    for (let to = 0; to < lineas.length; to++) {
+        const out = ctx.moveItem(lineas, from, to);
+        assert.equal(out.length, lineas.length, `mover ${from}->${to} cambia la cantidad`);
+        assert.equal([...new Set(out.map(l => l.id))].length, 4, `mover ${from}->${to} duplica o pierde`);
+    }
+}
+assert.equal(orden(lineas), '1,2,3,4', 'moveItem no debe mutar el arreglo original');
+
+// 7. El nombre de archivo no puede llevar caracteres ilegales ni quedar cojo.
+const ILEGALES = /[/\\:*?"<>|\u0000-\u001f]/;
+for (const sucio of ['a/b', 'a\\b', 'a:b', 'a*b', 'a?b', 'a"b', 'a<b', 'a>b', 'a|b', 'a\nb', 'a\tb']) {
+    assert.ok(!ILEGALES.test(ctx.sanitizeFilePart(sucio)), `queda ilegal en ${JSON.stringify(sucio)}`);
+}
+assert.equal(ctx.sanitizeFilePart('  A1/B2  '), 'A1B2', 'recorta los bordes');
+assert.equal(ctx.sanitizeFilePart('nombre...'), 'nombre', 'quita los puntos finales');
+assert.equal(ctx.sanitizeFilePart(null), '', 'null da cadena vacia');
+
+assert.equal(ctx.buildExportName('A1', 'Taller', 'pdf', '2026-09-19'), 'A1 - Taller.pdf');
+assert.equal(ctx.buildExportName('', 'Taller', 'pdf', '2026-09-19'), 'Taller.pdf', 'sin codigo no deja « - »');
+assert.equal(ctx.buildExportName('A1', '', 'pdf', '2026-09-19'), 'A1.pdf', 'sin nombre no deja « - »');
+assert.equal(ctx.buildExportName('', '', 'pdf', '2026-09-19'), 'MathPad 2026-09-19.pdf', 'sin nada, la fecha');
+assert.equal(ctx.buildExportName(' / ', ' \\ ', 'pdf', '2026-09-19'), 'MathPad 2026-09-19.pdf',
+    'si solo habia caracteres ilegales, tampoco queda cojo');
+
+// El limite de ~255 se mide en bytes: las acentuadas ocupan dos en UTF-8.
+const largo = ctx.buildExportName('á'.repeat(200), 'é'.repeat(200), 'pdf', '2026-09-19');
+assert.ok(new TextEncoder().encode(largo).length <= 255, `nombre de ${new TextEncoder().encode(largo).length} bytes`);
+assert.ok(largo.endsWith('.pdf'), 'el recorte debe conservar la extension');
+assert.ok(!ILEGALES.test(largo), 'el nombre final no lleva ilegales');
+
+// 8. Toda url() de un CSS vendorizado apunta a un archivo real. Es el fallo que
+//    dejo los iconos en cuadritos, y ahora ademas protege el reapuntado a mano de
+//    las fuentes de KaTeX hacia vendor/mathlive/fonts: si alguien re-vendoriza
+//    KaTeX desde node_modules, esto falla en vez de romperse en silencio.
+const vendor = new URL('www/vendor/', root);
+const cssFiles = readdirSync(vendor, { recursive: true }).filter(f => String(f).endsWith('.css'));
+assert.ok(cssFiles.length >= 2, `se esperaban >=2 CSS vendorizados, hay ${cssFiles.length}`);
+
+const rotas = [];
+let recursos = 0;
+for (const rel of cssFiles) {
+    const archivo = new URL(rel, vendor);
+    for (const u of new Set([...readFileSync(archivo, 'utf8').matchAll(/url\(([^)"']+)\)/g)].map(m => m[1]))) {
+        recursos++;
+        if (!existsSync(new URL(u, archivo))) rotas.push(`${rel} -> ${u}`);
+    }
+}
+assert.deepEqual(rotas, [], `url() que no resuelven:\n  ${rotas.join('\n  ')}`);
+
+console.log(`ok — ${keys.length} teclas, ${ids.size} ids, migracion v1→v2, mayusculas, reordenar, nombres, ${recursos} url() vendorizadas`);
