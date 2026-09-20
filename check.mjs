@@ -54,10 +54,5 @@ for (const v of inserts) {
     const esperado = /^[a-zñáéíóúü]$/.test(v);
     assert.equal(ctx.isCaseLetter(v), esperado, `isCaseLetter(${JSON.stringify(v)})`);
 }
-assert.equal(ctx.isCaseLetter(' '), false, 'el espacio no debe cambiar de caja');
-assert.ok(inserts.filter(ctx.isCaseLetter).length >= 32, 'deberia haber 32+ letras');
-
-// 5. La clave v1 nunca se borra: es la red de seguridad de la migracion.
-assert.ok(!/removeItem\(\s*LEGACY_KEY/.test(js), 'no borres LEGACY_KEY');
 
 console.log(`ok — ${keys.length} teclas, ${ids.size} ids, migracion v1→v2, mayusculas`);

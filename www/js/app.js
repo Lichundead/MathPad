@@ -114,10 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (docs.length === 0) docs = [newDoc('Procedimiento 1')];
         if (!currentDoc()) activeDocId = docs[0].id;
 
-        const doc = currentDoc();
-        linesData = doc.lines;
-        lineCounter = doc.counter;
-        renderDocSelect();
+        loadDoc(activeDocId);
         return linesData.length > 0;
     }
 
@@ -137,15 +134,11 @@ document.addEventListener('DOMContentLoaded', () => {
         renderEditor();
     }
 
-    function switchDoc(id) {
-        save();                      // vuelca el actual antes de soltarlo
-        loadDoc(id);
-        save();
-    }
-
     docSelect.addEventListener('change', () => {
+        save();                      // vuelca el actual antes de soltarlo
         if (docSelect.value !== 'new') {
-            switchDoc(docs.find(d => String(d.id) === docSelect.value).id);
+            loadDoc(docs.find(d => String(d.id) === docSelect.value).id);
+            save();                  // persiste cual quedo activo
             return;
         }
         const name = (prompt('Nombre del procedimiento:') || '').trim();
@@ -153,15 +146,10 @@ document.addEventListener('DOMContentLoaded', () => {
             renderDocSelect();       // deshace la seleccion de «Nuevo…»
             return;
         }
-        save();
         const doc = newDoc(name);
         docs.push(doc);
-        activeDocId = doc.id;
-        linesData = doc.lines;
-        lineCounter = 1;
-        activeLineId = null;
-        renderDocSelect();
-        createNewLine();
+        loadDoc(doc.id);
+        createNewLine();             // guarda al final
     });
 
     // --- Edición ---
@@ -697,11 +685,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Inicio ---
     customElements.whenDefined('math-field').then(() => {
-        if (load()) {
-            activeLineId = null;
-            renderEditor();
-        } else {
-            createNewLine();
-        }
+        if (!load()) createNewLine();
     });
 });
