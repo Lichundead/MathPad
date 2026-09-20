@@ -124,6 +124,33 @@ for (const mode of ['basic', 'qwerty', 'greek']) {
     }
 }
 
+// 7b. Que campo oculta el panel propio. El bug: las lineas de texto del editor son
+//     <input type="text"> igual que #student-code, pero con inputmode="none" no abren
+//     el teclado del sistema, asi que ocultarles el panel dejaba el teclado propio
+//     parpadeando en cada pulsacion de «Texto».
+const campo = (attrs) => ctx.abreTecladoNativo({ tagName: 'INPUT', type: 'text', inputMode: '', ...attrs });
+
+assert.equal(campo({ inputMode: 'none' }), false, 'una linea de texto del editor NO oculta el panel');
+assert.equal(campo({}), true, '#student-code si lo oculta');
+assert.equal(campo({ type: 'checkbox', inputMode: '' }), false, '#opt-latex es un checkbox, no cuenta');
+assert.equal(ctx.abreTecladoNativo(null), false, 'sin foco, no cuenta');
+assert.equal(ctx.abreTecladoNativo({ tagName: 'MATH-FIELD' }), false, 'un math-field no es un input');
+
+// Los tres <input> reales del HTML, leidos del documento, no de una lista a mano.
+const inputs = [...html.matchAll(/<input\b([^>]*)>/g)].map(m => m[1]);
+assert.equal(inputs.length, 3, `se esperaban 3 <input> en el HTML, hay ${inputs.length}`);
+for (const attrs of inputs) {
+    const id = /id="([^"]+)"/.exec(attrs)?.[1];
+    const tipo = /type="([^"]+)"/.exec(attrs)?.[1] || 'text';
+    const esperado = tipo === 'text';   // ninguno del HTML lleva inputmode="none"
+    assert.equal(ctx.abreTecladoNativo({ tagName: 'INPUT', type: tipo, inputMode: '' }), esperado,
+        `abreTecladoNativo incorrecto para #${id}`);
+}
+
+// La linea de texto del editor se crea desde JS: se comprueba que siga poniendolo.
+assert.ok(/setAttribute\('inputmode', 'none'\)/.test(js),
+    'las lineas de texto necesitan inputmode="none": si no, se apilan los dos teclados');
+
 // 8. Ni un solo dialogo del sistema: el WebView los dibuja fuera del documento,
 //    sin CSS ni safe-area. Deben pasar todos por el dialogo propio.
 for (const fn of ['prompt(', 'confirm(', 'alert(']) {

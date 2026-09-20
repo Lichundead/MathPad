@@ -31,6 +31,15 @@ function legacyToDocs(data) {
 // si las teclas se ven. Se ocultan por dos motivos independientes que no se pisan:
 // un campo nativo enfocado (#student-code, los dialogos) o el plegado manual.
 // Pura y fuera del closure para poder comprobarla sin navegador.
+// Un <input> solo cuenta como nativo si de verdad abre el teclado del sistema.
+// Las lineas de texto del editor tambien son <input type="text">, pero llevan
+// inputmode="none" justamente para que no salga: esas necesitan el panel propio.
+// Se mira el inputmode en vez de enumerar ids, asi un campo nuevo funciona solo.
+// El filtro por type sigue haciendo falta: #opt-latex es un checkbox.
+function abreTecladoNativo(el) {
+    return !!el && el.tagName === 'INPUT' && el.type === 'text' && el.inputMode !== 'none';
+}
+
 function panelState(mode, nativeFocused, collapsed) {
     return { mode, keys: !nativeFocused && !collapsed };
 }
@@ -514,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // editor en una franja de una linea. La barra de acciones nunca se oculta,
     // asi queda apoyada justo sobre el teclado nativo.
     function syncKeyboardPanel() {
-        const st = panelState(panelMode, hayCampoNativoEnfocado(), keyboardCollapsed);
+        const st = panelState(panelMode, abreTecladoNativo(document.activeElement), keyboardCollapsed);
 
         TABS.forEach(([id, tab, grid]) => {
             const on = id === st.mode;
@@ -529,13 +538,6 @@ document.addEventListener('DOMContentLoaded', () => {
         btnToggleKeyboard.innerHTML = keyboardCollapsed
             ? '<i class="fa-solid fa-chevron-up"></i>'
             : '<i class="fa-solid fa-chevron-down"></i>';
-    }
-
-    // Condicion general, no un caso especial para #student-code: vale para cualquier
-    // <input> de texto del encabezado, existan ahora o se añadan despues.
-    function hayCampoNativoEnfocado() {
-        const el = document.activeElement;
-        return !!el && el.tagName === 'INPUT' && el.type === 'text';
     }
 
     function moveLine(from, to) {
