@@ -105,26 +105,51 @@ for (const rel of cssFiles) {
 }
 assert.deepEqual(rotas, [], `url() que no resuelven:\n  ${rotas.join('\n  ')}`);
 
-// 7. Panel inferior: con una linea de texto activa el teclado propio estorba,
-//    porque encima sale el del sistema. Y nunca puede quedar irrecuperable.
+// 7. Panel inferior. Un unico valor de modo, corregido por dos hechos externos.
 // cadena, no deepEqual: el objeto viene del realm del vm y no comparte prototipo
-const panel = (tipo, plegado) => {
-    const r = ctx.panelState(tipo, plegado);
-    return `tabs=${r.tabs} keys=${r.keys}`;
+const panel = (mode, foco, plegado, tipo) => {
+    const r = ctx.panelState(mode, foco, plegado, tipo);
+    return `mode=${r.mode} keys=${r.keys} grid=${r.grid} nativeUsable=${r.nativeUsable}`;
 };
-assert.equal(panel('text', false), 'tabs=false keys=false', 'texto oculta el panel');
-assert.equal(panel('text', true), 'tabs=false keys=false', 'texto manda sobre el plegado');
-assert.equal(panel('math', false), 'tabs=true keys=true', 'matematica muestra el teclado');
-assert.equal(panel(undefined, false), 'tabs=true keys=true', 'sin linea activa, visible');
-assert.equal(panel('math', true), 'tabs=true keys=false', 'plegado deja las pestanas');
 
-// El invariante: si las teclas estan ocultas por el plegado manual, la barra de
-// pestanas -donde vive el boton de desplegar- tiene que seguir a la vista.
-for (const tipo of ['math', 'text', undefined, null]) {
-    for (const plegado of [true, false]) {
-        const { tabs, keys } = ctx.panelState(tipo, plegado);
-        if (!keys && tipo !== 'text') {
-            assert.ok(tabs, `panel irrecuperable con tipo=${tipo} plegado=${plegado}`);
+// linea de texto: la pestaña «Teclado» sirve, y con el campo enfocado el panel se aparta
+assert.equal(panel('basic', true, false, 'text'), 'mode=native keys=false grid=null nativeUsable=true',
+    'campo enfocado aparta el teclado propio');
+assert.equal(panel('basic', false, false, 'text'), 'mode=basic keys=true grid=basic nativeUsable=true',
+    'sin foco vuelve la eleccion del usuario');
+
+// cualquier campo nativo, no solo el de una linea de texto (p.ej. #student-code)
+assert.equal(panel('greek', true, false, 'math'), 'mode=native keys=false grid=null nativeUsable=true',
+    'un campo del encabezado tambien aparta el panel');
+
+// linea matematica: MathLive pone inputmode=none, asi que 'native' no llegaria a abrir nada
+assert.equal(panel('native', false, false, 'math'), 'mode=basic keys=true grid=basic nativeUsable=false',
+    'en matematica, native cae a basic y la pestaña queda deshabilitada');
+assert.equal(panel('greek', false, false, 'math'), 'mode=greek keys=true grid=greek nativeUsable=false',
+    'greek se respeta en matematica');
+
+// el plegado manual solo aplica a las rejillas propias
+assert.equal(panel('basic', false, true, 'math'), 'mode=basic keys=false grid=basic nativeUsable=false',
+    'plegado oculta las teclas sin cambiar de modo');
+
+// Invariantes sobre todas las combinaciones.
+for (const mode of ['basic', 'greek', 'native']) {
+    for (const foco of [true, false]) {
+        for (const plegado of [true, false]) {
+            for (const tipo of ['math', 'text', undefined]) {
+                const r = ctx.panelState(mode, foco, plegado, tipo);
+                assert.ok(['basic', 'greek', 'native'].includes(r.mode), `modo invalido: ${r.mode}`);
+                // La eleccion del usuario nunca se pierde: 'native' solo se corrige
+                // cuando de verdad no puede funcionar.
+                assert.ok(r.mode !== 'native' || r.nativeUsable,
+                    `native sin poder usarse (mode=${mode} foco=${foco} tipo=${tipo})`);
+                // En modo nativo no puede quedar una rejilla propia encima.
+                assert.ok(r.mode !== 'native' || (!r.keys && r.grid === null),
+                    `dos teclados apilados (mode=${mode} foco=${foco} tipo=${tipo})`);
+                // Si se ven teclas, hay exactamente una rejilla que mostrar.
+                assert.equal(r.keys, r.grid !== null && !plegado,
+                    `keys y grid incoherentes (mode=${mode} foco=${foco} tipo=${tipo})`);
+            }
         }
     }
 }

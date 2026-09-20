@@ -22,9 +22,17 @@
     <header class="bg-blue-600 text-white shadow-md flex justify-between items-center z-10 shrink-0 gap-2 app-header">
         <div class="flex items-center gap-2 min-w-0">
             <i class="fa-solid fa-square-root-variable text-xl shrink-0"></i>
-            <!-- Procedimientos guardados: un <select> nativo hace de lista, sin modal -->
-            <select id="doc-select" title="Procedimiento"
-                    class="min-w-0 max-w-[120px] sm:max-w-[180px] bg-blue-700 text-white text-sm rounded px-1 py-1.5 outline-none border-none"></select>
+            <!-- Desplegable propio: el <select> nativo se dibuja como dialogo
+                 del sistema en el WebView y no respeta el CSS ni el safe-area -->
+            <div class="relative min-w-0" id="doc-picker">
+                <button id="doc-button" type="button" title="Procedimiento"
+                        aria-haspopup="listbox" aria-expanded="false"
+                        class="w-full min-w-0 max-w-[120px] sm:max-w-[180px] flex items-center gap-1 bg-blue-700 text-white text-sm rounded px-2 py-1.5">
+                    <span id="doc-name" class="truncate"></span>
+                    <i class="fa-solid fa-chevron-down text-xs shrink-0"></i>
+                </button>
+                <ul id="doc-menu" role="listbox" aria-label="Procedimientos" class="doc-menu" hidden></ul>
+            </div>
         </div>
 
         <!-- Campo para el código del estudiante -->
@@ -55,6 +63,7 @@
     <div class="math-keyboard shrink-0" id="math-keyboard">
         <div class="flex border-b border-gray-200 bg-white px-2" id="keyboard-tabs">
             <button id="tab-basic" class="px-3 py-2 text-sm font-medium text-blue-600 border-b-2 border-blue-600 focus:outline-none">Básico</button>
+            <button id="tab-native" class="px-3 py-2 text-sm font-medium text-gray-500 focus:outline-none">Teclado</button>
             <button id="tab-greek" class="px-3 py-2 text-sm font-medium text-gray-500 focus:outline-none">αβγ</button>
             <label class="ml-auto flex items-center gap-1 px-2 text-xs text-gray-500 select-none cursor-pointer"
                    title="Incluir el código LaTeX de cada ecuación en el PDF">

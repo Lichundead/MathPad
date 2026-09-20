@@ -27,12 +27,26 @@ function legacyToDocs(data) {
 
 // Mueve el elemento de `from` a `to` y devuelve un arreglo nuevo. Fuera de rango
 // o sin movimiento, devuelve una copia intacta. La usan las flechas y el arrastre.
-// Que se ve en el panel inferior, segun el tipo de linea activa y el plegado manual.
-// Pura y fuera del closure a proposito: asi se comprueba que el boton de desplegar
-// nunca desaparece a la vez que las teclas, que dejaria un teclado irrecuperable.
-function panelState(activeType, collapsed) {
-    const esTexto = activeType === 'text';
-    return { tabs: !esTexto, keys: !esTexto && !collapsed };
+// Un unico valor decide el panel: 'basic' | 'greek' | 'native'. En vez de banderas
+// sueltas que se pisan, `mode` es lo que eligio el usuario y los dos hechos externos
+// -si hay un campo nativo enfocado y de que tipo es la linea activa- solo lo corrigen.
+//
+// 'native' no es un teclado propio: es apartarse para que salga el del sistema.
+// Una linea matematica no lo admite porque MathLive fija inputmode=none en su campo
+// oculto (ML__keyboard-sink), asi que enfocarla no abriria nada.
+//
+// Pura y fuera del closure para poder comprobar las transiciones sin navegador.
+function panelState(mode, nativeFocused, collapsed, activeType) {
+    const nativeUsable = nativeFocused || activeType === 'text';
+    const efectivo = nativeFocused ? 'native'
+        : (mode === 'native' && !nativeUsable) ? 'basic'
+        : mode;
+    return {
+        mode: efectivo,
+        nativeUsable,
+        keys: efectivo !== 'native' && !collapsed,
+        grid: efectivo === 'native' ? null : efectivo
+    };
 }
 
 function moveItem(arr, from, to) {
@@ -88,18 +102,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const keyboardGrid = document.getElementById('keyboard-grid');
     const tabBasic = document.getElementById('tab-basic');
     const tabGreek = document.getElementById('tab-greek');
+    const tabNative = document.getElementById('tab-native');
     const greekGrid = document.getElementById('greek-grid');
     const btnRenderLine = document.getElementById('btn-render-line');
     const btnShare = document.getElementById('btn-share');
     const btnEvalIA = document.getElementById('btn-eval-ia');
     const studentCodeInput = document.getElementById('student-code');
     const captureStage = document.getElementById('capture-stage');
-    const docSelect = document.getElementById('doc-select');
+    const docPicker = document.getElementById('doc-picker');
+    const docButton = document.getElementById('doc-button');
+    const docName = document.getElementById('doc-name');
+    const docMenu = document.getElementById('doc-menu');
     const btnPdf = document.getElementById('btn-pdf');
-    const keyboardTabs = document.getElementById('keyboard-tabs');
     const keyboardContainer = document.getElementById('keyboard-container');
     const btnToggleKeyboard = document.getElementById('btn-toggle-keyboard');
     let keyboardCollapsed = false;   // plegado manual, solo cuando el panel esta en juego
+    let panelMode = 'basic';         // 'basic' | 'greek' | 'native'
+
+    // [id, pestaña, rejilla]. 'native' no tiene rejilla: es apartarse del paso.
+    const TABS = [
+        ['basic', tabBasic, keyboardGrid],
+        ['native', tabNative, null],
+        ['greek', tabGreek, greekGrid]
+    ];
     const optLatex = document.getElementById('opt-latex');
 
     // --- Persistencia ---
@@ -161,12 +186,75 @@ document.addEventListener('DOMContentLoaded', () => {
         return linesData.length > 0;
     }
 
-    function renderDocSelect() {
-        docSelect.innerHTML = '';
-        docs.forEach(d => docSelect.add(new Option(d.name, d.id, false, d.id === activeDocId)));
-        docSelect.add(new Option('✏️ Renombrar…', 'rename'));
-        docSelect.add(new Option('➕ Nuevo…', 'new'));
+    function renderDocMenu() {
+        docName.textContent = currentDoc() ? currentDoc().name : '';
+        docMenu.innerHTML = '';
+
+        const opcion = (texto, onClick, activa) => {
+            const li = document.createElement('li');
+            li.className = 'doc-option';
+            li.textContent = texto;
+            li.setAttribute('role', 'option');
+            li.setAttribute('aria-selected', String(!!activa));
+            li.addEventListener('click', onClick);
+            docMenu.appendChild(li);
+        };
+
+        docs.forEach(d => opcion(d.name, () => {
+            closeDocMenu();
+            save();                  // vuelca el actual antes de soltarlo
+            loadDoc(d.id);
+            save();                  // persiste cual quedo activo
+        }, d.id === activeDocId));
+
+        const sep = document.createElement('li');
+        sep.className = 'doc-sep';
+        sep.setAttribute('role', 'presentation');
+        docMenu.appendChild(sep);
+
+        // Sin esto el documento inicial se llamaba siempre «Procedimiento 1» y no
+        // habia forma de cambiarlo: de ahi que el nombre del PDF pareciera generico.
+        opcion('✏️ Renombrar…', () => {
+            closeDocMenu();
+            const nuevo = (prompt('Nuevo nombre:', currentDoc().name) || '').trim();
+            if (nuevo) currentDoc().name = nuevo;
+            renderDocMenu();
+            save();
+        });
+
+        opcion('➕ Nuevo…', () => {
+            closeDocMenu();
+            const name = (prompt('Nombre del procedimiento:') || '').trim();
+            if (!name) return;
+            save();
+            const doc = newDoc(name);
+            docs.push(doc);
+            loadDoc(doc.id);
+            createNewLine();         // guarda al final
+        });
     }
+
+    function docMenuOpen() {
+        return !docMenu.hidden;
+    }
+
+    function closeDocMenu() {
+        docMenu.hidden = true;
+        docButton.setAttribute('aria-expanded', 'false');
+    }
+
+    docButton.addEventListener('click', () => {
+        if (docMenuOpen()) {
+            closeDocMenu();
+            return;
+        }
+        docMenu.hidden = false;
+        docButton.setAttribute('aria-expanded', 'true');
+    });
+
+    document.addEventListener('pointerdown', (e) => {
+        if (docMenuOpen() && !docPicker.contains(e.target)) closeDocMenu();
+    });
 
     function loadDoc(id) {
         activeDocId = id;
@@ -174,38 +262,9 @@ document.addEventListener('DOMContentLoaded', () => {
         linesData = doc.lines;
         lineCounter = doc.counter;
         activeLineId = null;
-        renderDocSelect();
+        renderDocMenu();
         renderEditor();
     }
-
-    docSelect.addEventListener('change', () => {
-        save();                      // vuelca el actual antes de soltarlo
-
-        // Sin esto el documento inicial se llamaba siempre «Procedimiento 1» y no
-        // habia forma de cambiarlo: de ahi que el nombre del PDF pareciera generico.
-        if (docSelect.value === 'rename') {
-            const nuevo = (prompt('Nuevo nombre:', currentDoc().name) || '').trim();
-            if (nuevo) currentDoc().name = nuevo;
-            renderDocSelect();       // deshace la seleccion de «Renombrar…»
-            save();
-            return;
-        }
-
-        if (docSelect.value !== 'new') {
-            loadDoc(docs.find(d => String(d.id) === docSelect.value).id);
-            save();                  // persiste cual quedo activo
-            return;
-        }
-        const name = (prompt('Nombre del procedimiento:') || '').trim();
-        if (!name) {
-            renderDocSelect();       // deshace la seleccion de «Nuevo…»
-            return;
-        }
-        const doc = newDoc(name);
-        docs.push(doc);
-        loadDoc(doc.id);
-        createNewLine();             // guarda al final
-    });
 
     // --- Edición ---
     function createNewLine(type = 'math') {
@@ -387,13 +446,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // asi queda apoyada justo sobre el teclado nativo.
     function syncKeyboardPanel() {
         const activa = linesData.find(l => l.id === activeLineId);
-        const { tabs, keys } = panelState(activa && activa.type, keyboardCollapsed);
+        const st = panelState(panelMode, hayCampoNativoEnfocado(), keyboardCollapsed, activa && activa.type);
 
-        keyboardTabs.style.display = tabs ? '' : 'none';
-        keyboardContainer.style.display = keys ? '' : 'none';
+        TABS.forEach(([id, tab, grid]) => {
+            const on = id === st.mode;
+            tab.classList.toggle('text-blue-600', on);
+            tab.classList.toggle('border-b-2', on);
+            tab.classList.toggle('border-blue-600', on);
+            tab.classList.toggle('text-gray-500', !on);
+            if (grid) grid.style.display = st.grid === id ? 'grid' : 'none';
+        });
+
+        tabNative.disabled = !st.nativeUsable;
+        tabNative.classList.toggle('opacity-30', !st.nativeUsable);
+
+        keyboardContainer.style.display = st.keys ? '' : 'none';
         btnToggleKeyboard.innerHTML = keyboardCollapsed
             ? '<i class="fa-solid fa-chevron-up"></i>'
             : '<i class="fa-solid fa-chevron-down"></i>';
+    }
+
+    // Condicion general, no un caso especial para #student-code: vale para cualquier
+    // <input> de texto del encabezado, existan ahora o se añadan despues.
+    function hayCampoNativoEnfocado() {
+        const el = document.activeElement;
+        return !!el && el.tagName === 'INPUT' && el.type === 'text';
     }
 
     function moveLine(from, to) {
@@ -765,6 +842,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const capApp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
     if (capApp) {
         capApp.addListener('backButton', () => {
+            if (docMenuOpen()) return closeDocMenu();
             if (!deactivate()) capApp.exitApp();
         });
     }
@@ -801,23 +879,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // [pestana, panel, display]. Una pestana nueva es una fila mas.
-    const TABS = [
-        [tabBasic, keyboardGrid, 'grid'],
-        [tabGreek, greekGrid, 'grid']
-    ];
+    TABS.forEach(([id, tab]) => tab.addEventListener('click', () => {
+        if (id === 'native') {
+            // Sincrono y dentro del gesto, sin render de por medio: es la unica
+            // forma de que Android abra su teclado.
+            if (activeInputForKeyboard && activeInputForKeyboard.tagName === 'INPUT') {
+                activeInputForKeyboard.focus();
+            }
+        } else if (hayCampoNativoEnfocado()) {
+            document.activeElement.blur();   // cierra el teclado del sistema
+        }
+        panelMode = id;
+        syncKeyboardPanel();
+    }));
 
-    function activateTab(activeTab) {
-        TABS.forEach(([tab, panel, display]) => {
-            const on = tab === activeTab;
-            tab.classList.toggle('text-blue-600', on);
-            tab.classList.toggle('border-b-2', on);
-            tab.classList.toggle('border-blue-600', on);
-            tab.classList.toggle('text-gray-500', !on);
-            panel.style.display = on ? display : 'none';
-        });
-    }
-
-    TABS.forEach(([tab]) => tab.addEventListener('click', () => activateTab(tab)));
+    // El panel depende del foco, asi que hay que reaccionar a el. focusout dispara
+    // antes de que el nuevo elemento lo reciba: se lee al tick siguiente.
+    document.addEventListener('focusin', syncKeyboardPanel);
+    document.addEventListener('focusout', () => setTimeout(syncKeyboardPanel, 0));
 
     let toastTimer = null;
     function showToast(msg) {

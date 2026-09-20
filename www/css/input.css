@@ -129,6 +129,53 @@
         font-weight: bold;
     }
 
+    /* Desplegable de procedimientos, dentro de la pagina */
+    .doc-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        min-width: 230px;
+        max-height: 60vh;
+        overflow-y: auto;
+        background-color: #ffffff;
+        color: #1f2937;
+        border-radius: 8px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+        padding: 4px;
+        z-index: 50;
+    }
+
+    /* (0,2,0) para ganarle al [hidden] del preflight, que es (0,1,0) */
+    .doc-menu[hidden] {
+        display: none;
+    }
+
+    .doc-option {
+        display: flex;
+        align-items: center;
+        min-height: 44px;        /* objetivo tactil */
+        padding: 0 12px;
+        border-radius: 6px;
+        font-size: 0.95rem;
+        cursor: pointer;
+    }
+
+    .doc-option:active {
+        background-color: #e5e7eb;
+    }
+
+    .doc-option[aria-selected="true"] {
+        background-color: #eff6ff;
+        color: #1d4ed8;
+        font-weight: 600;
+    }
+
+    .doc-sep {
+        height: 1px;
+        margin: 4px 0;
+        background-color: #e5e7eb;
+    }
+
     .inline-input {
         width: 100%;
         font-size: 1.1rem;
