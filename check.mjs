@@ -46,23 +46,7 @@ assert.equal(ctx.legacyToDocs({ lines: [] }).length, 0, 'v1 vacio no crea docume
 assert.equal(ctx.legacyToDocs(null).length, 0, 'v1 ausente no crea documento');
 assert.equal(ctx.newDoc('x').counter, 1, 'documento nuevo empieza en 1');
 
-// 4. Mayusculas: el predicado corre sobre las teclas reales del teclado qwerty.
-//    Si clasificara mal el espacio, setShift borraria la etiqueta «Espacio».
-const qwerty = html.split('Teclado QWERTY')[1].split('Teclado Griego')[0];
-const inserts = [...qwerty.matchAll(/data-insert="([^"]*)"/g)].map(m => m[1]);
-assert.ok(inserts.includes(' ') && inserts.includes(','), 'faltan espacio o coma en el qwerty');
-for (const v of inserts) {
-    const esperado = /^[a-zñáéíóúü]$/.test(v);
-    assert.equal(ctx.isCaseLetter(v), esperado, `isCaseLetter(${JSON.stringify(v)})`);
-}
-
-// 5. Fila de digitos en el qwerty, y que las mayusculas no los toquen.
-for (const d of '1234567890') {
-    assert.ok(inserts.includes(d), `falta el digito ${d} en #qwerty-grid`);
-    assert.equal(ctx.isCaseLetter(d), false, `el digito ${d} no debe cambiar de caja`);
-}
-
-// 6. Reordenar no pierde ni duplica lineas.
+// 4. Reordenar no pierde ni duplica lineas.
 const lineas = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
 const orden = a => a.map(l => l.id).join(',');
 assert.equal(orden(ctx.moveItem(lineas, 3, 1)), '1,4,2,3', 'subir del final al indice 1');
@@ -80,7 +64,7 @@ for (let from = 0; from < lineas.length; from++) {
 }
 assert.equal(orden(lineas), '1,2,3,4', 'moveItem no debe mutar el arreglo original');
 
-// 7. El nombre de archivo no puede llevar caracteres ilegales ni quedar cojo.
+// 5. El nombre de archivo no puede llevar caracteres ilegales ni quedar cojo.
 const ILEGALES = /[/\\:*?"<>|\u0000-\u001f]/;
 for (const sucio of ['a/b', 'a\\b', 'a:b', 'a*b', 'a?b', 'a"b', 'a<b', 'a>b', 'a|b', 'a\nb', 'a\tb']) {
     assert.ok(!ILEGALES.test(ctx.sanitizeFilePart(sucio)), `queda ilegal en ${JSON.stringify(sucio)}`);
@@ -102,7 +86,7 @@ assert.ok(new TextEncoder().encode(largo).length <= 255, `nombre de ${new TextEn
 assert.ok(largo.endsWith('.pdf'), 'el recorte debe conservar la extension');
 assert.ok(!ILEGALES.test(largo), 'el nombre final no lleva ilegales');
 
-// 8. Toda url() de un CSS vendorizado apunta a un archivo real. Es el fallo que
+// 6. Toda url() de un CSS vendorizado apunta a un archivo real. Es el fallo que
 //    dejo los iconos en cuadritos, y ahora ademas protege el reapuntado a mano de
 //    las fuentes de KaTeX hacia vendor/mathlive/fonts: si alguien re-vendoriza
 //    KaTeX desde node_modules, esto falla en vez de romperse en silencio.
@@ -121,4 +105,4 @@ for (const rel of cssFiles) {
 }
 assert.deepEqual(rotas, [], `url() que no resuelven:\n  ${rotas.join('\n  ')}`);
 
-console.log(`ok — ${keys.length} teclas, ${ids.size} ids, migracion v1→v2, mayusculas, reordenar, nombres, ${recursos} url() vendorizadas`);
+console.log(`ok — ${keys.length} teclas, ${ids.size} ids, migracion v1→v2, reordenar, nombres, ${recursos} url() vendorizadas`);

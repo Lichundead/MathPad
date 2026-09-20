@@ -129,48 +129,6 @@
         font-weight: bold;
     }
 
-    /* --- El qwerty imita al teclado del sistema ---
-       Teclas planas sin borde ni sombra, modificadoras en gris, sin encogerse al
-       pulsar. Va con selector de id porque las utilidades de Tailwind (text-lg,
-       font-bold) ganan por capa pero pierden por especificidad frente a un id.
-       Básico y αβγ no se tocan: ahi el aspecto de calculadora es el correcto. */
-    #qwerty-grid {
-        background-color: #e4e7eb;   /* mas gris que gray-100: si no, las teclas
-                                        planas y blancas no se distinguen del fondo */
-    }
-
-    #qwerty-grid .math-key {
-        border: none;
-        box-shadow: none;
-        border-radius: 8px;
-        font-size: 1.25rem;
-        font-weight: 400;
-    }
-
-    #qwerty-grid .math-key:active {
-        background-color: #c9ced4;
-        transform: none;             /* una tecla real no se encoge */
-    }
-
-    /* Modificadoras en gris, como en el teclado del sistema */
-    #qwerty-grid .btn-shift,
-    #qwerty-grid .btn-backspace {
-        background-color: #cdd2d8;
-        color: #3c4043;
-    }
-
-    /* Mayusculas activas: (1,2,0) para ganarle al gris de la modificadora */
-    #qwerty-grid .btn-shift.shift-on {
-        background-color: #1a73e8;
-        color: #ffffff;
-    }
-
-    /* La barra espaciadora conserva su etiqueta, mas discreta */
-    #qwerty-grid .math-key[data-insert=" "] {
-        font-size: 0.8125rem;
-        color: #5f6368;
-    }
-
     .inline-input {
         width: 100%;
         font-size: 1.1rem;

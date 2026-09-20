@@ -18,13 +18,6 @@ function newDoc(name, lines = [], counter = null) {
     };
 }
 
-// Una tecla cambia de caja solo si es una letra. ',' y el espacio no, y si se
-// les aplicara, la etiqueta «Espacio» se sobrescribiria con un espacio en blanco.
-// Fuera del closure a proposito, para poder comprobarla.
-function isCaseLetter(v) {
-    return typeof v === 'string' && v.length === 1 && v.toLowerCase() !== v.toUpperCase();
-}
-
 // v1 guardaba un unico procedimiento suelto. Pura y fuera del closure a proposito:
 // es la ruta donde se pierde el trabajo del estudiante si falla, y asi se comprueba.
 function legacyToDocs(data) {
@@ -85,12 +78,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnNewLine = document.getElementById('btn-new-line');
     const btnClear = document.getElementById('btn-clear');
     const keyboardGrid = document.getElementById('keyboard-grid');
-    const qwertyGrid = document.getElementById('qwerty-grid');
     const tabBasic = document.getElementById('tab-basic');
-    const tabQwerty = document.getElementById('tab-qwerty');
     const tabGreek = document.getElementById('tab-greek');
     const greekGrid = document.getElementById('greek-grid');
-    const btnShift = document.getElementById('btn-shift');
     const btnRenderLine = document.getElementById('btn-render-line');
     const btnShare = document.getElementById('btn-share');
     const btnEvalIA = document.getElementById('btn-eval-ia');
@@ -162,6 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderDocSelect() {
         docSelect.innerHTML = '';
         docs.forEach(d => docSelect.add(new Option(d.name, d.id, false, d.id === activeDocId)));
+        docSelect.add(new Option('✏️ Renombrar…', 'rename'));
         docSelect.add(new Option('➕ Nuevo…', 'new'));
     }
 
@@ -177,6 +168,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     docSelect.addEventListener('change', () => {
         save();                      // vuelca el actual antes de soltarlo
+
+        // Sin esto el documento inicial se llamaba siempre «Procedimiento 1» y no
+        // habia forma de cambiarlo: de ahi que el nombre del PDF pareciera generico.
+        if (docSelect.value === 'rename') {
+            const nuevo = (prompt('Nuevo nombre:', currentDoc().name) || '').trim();
+            if (nuevo) currentDoc().name = nuevo;
+            renderDocSelect();       // deshace la seleccion de «Renombrar…»
+            save();
+            return;
+        }
+
         if (docSelect.value !== 'new') {
             loadDoc(docs.find(d => String(d.id) === docSelect.value).id);
             save();                  // persiste cual quedo activo
@@ -229,12 +231,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 input.placeholder = index === 0
                     ? 'Escribe el enunciado del problema aquí...'
                     : 'Describe tu paso aquí (Ej. Despejando x)...';
-                // Evita que Android abra su propio teclado encima del nuestro
-                input.setAttribute('inputmode', 'none');
+                // Sin inputmode="none": el teclado del sistema es mejor para prosa
+                // (autocorreccion, prediccion, acentos). Tampoco se le apaga la
+                // correccion, que es justo lo que se venia a ganar.
                 input.setAttribute('autocomplete', 'off');
-                input.setAttribute('autocorrect', 'off');
-                input.setAttribute('autocapitalize', 'off');
-                input.spellcheck = false;
+                input.setAttribute('autocapitalize', 'sentences');
 
                 if (lineObj.id === activeLineId) {
                     input.classList.add('border', 'border-gray-300', 'rounded', 'bg-gray-50');
@@ -700,29 +701,9 @@ document.addEventListener('DOMContentLoaded', () => {
         else el.addEventListener('click', run);
     }
 
-    // Mayusculas: reescribe data-insert y la etiqueta de las teclas de letra.
-    // Se salta ',' y el espacio, que no cambian de caja.
-    let shift = false;
-
-    function setShift(on) {
-        shift = on;
-        // Clase propia, no utilidades: el gris de #qwerty-grid .btn-shift les gana
-        // por especificidad y el resaltado no se veria.
-        btnShift.classList.toggle('shift-on', on);
-        qwertyGrid.querySelectorAll('.math-key[data-insert]').forEach(k => {
-            const v = k.dataset.insert;
-            if (!isCaseLetter(v)) return;
-            k.dataset.insert = on ? v.toUpperCase() : v.toLowerCase();
-            k.textContent = k.dataset.insert;
-        });
-    }
-
-    bindKey(btnShift, () => setShift(!shift));
-
     document.querySelectorAll('.math-key[data-insert]').forEach(btn => {
         bindKey(btn, () => {
             const { insert, text } = btn.dataset;
-            if (shift) setShift(false);   // un solo uso, como en cualquier teclado de movil
             if (activeLineId === null) {
                 createNewLine('math');
                 setTimeout(() => insertTextAtCursor(insert, text), 80);
@@ -783,7 +764,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // [pestana, panel, display]. Una pestana nueva es una fila mas.
     const TABS = [
         [tabBasic, keyboardGrid, 'grid'],
-        [tabQwerty, qwertyGrid, 'flex'],
         [tabGreek, greekGrid, 'grid']
     ];
 
